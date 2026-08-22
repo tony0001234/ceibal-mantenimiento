@@ -1,0 +1,203 @@
+/* =====================================================================
+   Sistema de Control de Mantenimiento — Hospital Ceibal (IGSS)
+   Tokens de diseño del inciso 5.3 (Maquetación y diseño de la interfaz)
+   - 5.3.1 Tipografía: system font stack de Bootstrap 5 (sin fuentes externas)
+   - 5.3.2 Colores: azul institucional IGSS + paleta semántica de 4 estados
+   ===================================================================== */
+
+:root {
+  /* --- Azul institucional IGSS (colores de interfaz) --- */
+  --ceibal-azul-900: #0f2a4a;
+  --ceibal-azul-800: #14375f;
+  --ceibal-azul-700: #1b4b7e;
+  --ceibal-azul-600: #21618c;   /* primario */
+  --ceibal-azul-500: #2e79a8;
+  --ceibal-azul-100: #e7eef5;
+  --ceibal-azul-050: #f3f7fb;
+
+  /* --- Paleta semántica de estados (5.3.2) --- */
+  --estado-funcionando:  #1f8b4c;  /* verde  */
+  --estado-mantenimiento:#c98a00;  /* ámbar  */
+  --estado-fuera:        #c0392b;  /* rojo   */
+  --estado-baja:         #6c757d;  /* gris   */
+
+  --amber-bg: #fff4d6;
+  --amber-border: #e6b800;
+  --amber-text: #7a5b00;
+
+  /* --- Escala tipográfica (Tabla 5.3.1) --- */
+  --fs-titulo-pantalla: 24px;   /* semi negrita */
+  --fs-titulo-seccion: 18px;    /* semi negrita */
+  --fs-cuerpo: 16px;            /* normal */
+  --fs-etiqueta: 14px;          /* normal */
+  --fs-auxiliar: 13px;          /* normal */
+  --fs-kpi: 32px;               /* negrita */
+
+  --sidebar-w: 250px;
+  --topbar-h: 58px;
+
+  /* Bootstrap primary override hacia el azul institucional */
+  --bs-primary: var(--ceibal-azul-600);
+  --bs-primary-rgb: 33, 97, 140;
+  --bs-link-color: var(--ceibal-azul-700);
+  --bs-link-hover-color: var(--ceibal-azul-900);
+}
+
+body {
+  /* System font stack (Bootstrap 5 por defecto: Segoe UI / Roboto / San Francisco) */
+  font-size: var(--fs-cuerpo);
+  color: #1f2937;
+  background-color: #eef1f5;
+}
+
+/* ---------- Tipografía por rol ---------- */
+.titulo-pantalla { font-size: var(--fs-titulo-pantalla); font-weight: 600; color: var(--ceibal-azul-900); }
+.titulo-seccion  { font-size: var(--fs-titulo-seccion);  font-weight: 600; color: var(--ceibal-azul-800); }
+.texto-auxiliar  { font-size: var(--fs-auxiliar); color: #6b7280; }
+.form-label      { font-size: var(--fs-etiqueta); font-weight: 500; color: #374151; margin-bottom: .25rem; }
+
+/* ---------- Botones primarios ---------- */
+.btn-primary {
+  --bs-btn-bg: var(--ceibal-azul-600);
+  --bs-btn-border-color: var(--ceibal-azul-600);
+  --bs-btn-hover-bg: var(--ceibal-azul-700);
+  --bs-btn-hover-border-color: var(--ceibal-azul-700);
+  --bs-btn-active-bg: var(--ceibal-azul-800);
+  --bs-btn-active-border-color: var(--ceibal-azul-800);
+}
+.btn-outline-primary {
+  --bs-btn-color: var(--ceibal-azul-700);
+  --bs-btn-border-color: var(--ceibal-azul-600);
+  --bs-btn-hover-bg: var(--ceibal-azul-600);
+  --bs-btn-hover-border-color: var(--ceibal-azul-600);
+}
+a { color: var(--ceibal-azul-700); }
+
+/* ======================= LOGIN ======================= */
+.login-wrap {
+  min-height: 100vh;
+  display: flex; align-items: center; justify-content: center;
+  background: radial-gradient(circle at 50% 30%, #1b3a5c 0%, #0d2036 60%, #0a1a2c 100%);
+  padding: 1.5rem;
+}
+.login-card {
+  width: 100%; max-width: 430px;
+  border-radius: 16px; overflow: hidden;
+  box-shadow: 0 24px 60px rgba(0,0,0,.45);
+  background: #fff;
+}
+.login-head {
+  background: linear-gradient(180deg, var(--ceibal-azul-800) 0%, var(--ceibal-azul-600) 100%);
+  color: #fff; text-align: center; padding: 2rem 1.5rem 1.75rem;
+}
+.login-logo {
+  width: 74px; height: 74px; margin: 0 auto 1rem;
+  border-radius: 50%; border: 2px solid rgba(255,255,255,.5);
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(255,255,255,.08); font-size: 34px;
+}
+.login-body { padding: 1.75rem; }
+
+/* ======================= LAYOUT (4 zonas 5.3.3) ======================= */
+/* Zona 1: barra superior fija */
+.topbar {
+  height: var(--topbar-h);
+  background: var(--ceibal-azul-800);
+  color: #fff;
+  position: fixed; top: 0; left: 0; right: 0; z-index: 1030;
+  display: flex; align-items: center; gap: .75rem;
+  padding: 0 1rem;
+}
+.topbar .brand-emblem {
+  width: 34px; height: 34px; border-radius: 50%;
+  background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.35);
+  display: flex; align-items: center; justify-content: center; font-size: 18px;
+}
+
+/* Zona 2: menú lateral */
+.sidebar {
+  position: fixed; top: var(--topbar-h); bottom: 0; left: 0;
+  width: var(--sidebar-w);
+  background: var(--ceibal-azul-900);
+  padding: .75rem .5rem; overflow-y: auto; z-index: 1020;
+}
+.sidebar .nav-link {
+  color: #c9d6e5; border-radius: 8px; padding: .6rem .8rem; margin-bottom: .15rem;
+  font-size: 15px; display: flex; align-items: center; gap: .65rem;
+}
+.sidebar .nav-link:hover { background: rgba(255,255,255,.07); color: #fff; }
+.sidebar .nav-link.active { background: var(--ceibal-azul-600); color: #fff; font-weight: 500; }
+.sidebar .nav-link i { width: 20px; text-align: center; font-size: 17px; }
+.sidebar-cat { color: #7f97b0; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; padding: .9rem .8rem .3rem; }
+
+/* Zona 3: área de contenido */
+.content-area {
+  margin-left: var(--sidebar-w);
+  margin-top: var(--topbar-h);
+  padding: 1.5rem 1.75rem 5.5rem;
+  min-height: calc(100vh - var(--topbar-h));
+}
+
+/* Zona 4: zona de acciones (esquina inferior derecha) */
+.action-zone {
+  position: fixed; right: 1.75rem; bottom: 1rem; z-index: 1010;
+  display: flex; gap: .6rem;
+  background: rgba(255,255,255,.9); backdrop-filter: blur(4px);
+  padding: .6rem; border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,.14);
+}
+
+/* ---------- Tarjetas / KPI ---------- */
+.card { border: 1px solid #e4e9f0; border-radius: 12px; }
+.card-header { background: #fff; border-bottom: 1px solid #eef1f5; font-weight: 600; color: var(--ceibal-azul-800); }
+.kpi-card { border-left: 4px solid var(--ceibal-azul-600); }
+.kpi-value { font-size: var(--fs-kpi); font-weight: 700; line-height: 1; color: var(--ceibal-azul-900); }
+.kpi-label { font-size: var(--fs-auxiliar); color: #6b7280; text-transform: uppercase; letter-spacing: .03em; }
+.kpi-icon { font-size: 30px; opacity: .25; color: var(--ceibal-azul-600); }
+
+/* ---------- Badges de estado (siempre con etiqueta textual) ---------- */
+.estado-badge { font-size: 12.5px; font-weight: 600; padding: .3em .6em; border-radius: 20px; display: inline-flex; align-items: center; gap: .35em; }
+.estado-badge .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.estado-funcionando  { background: #e5f4ec; color: var(--estado-funcionando); }
+.estado-funcionando  .dot { background: var(--estado-funcionando); }
+.estado-mantenimiento{ background: #fbf1da; color: var(--estado-mantenimiento); }
+.estado-mantenimiento .dot { background: var(--estado-mantenimiento); }
+.estado-fuera        { background: #fbe7e5; color: var(--estado-fuera); }
+.estado-fuera        .dot { background: var(--estado-fuera); }
+.estado-baja         { background: #eceef0; color: var(--estado-baja); }
+.estado-baja         .dot { background: var(--estado-baja); }
+
+/* ---------- Tabla ---------- */
+.table thead th { background: var(--ceibal-azul-600); color: #fff; font-weight: 500; font-size: 14px; border-color: var(--ceibal-azul-700); white-space: nowrap; }
+.table td { font-size: 15px; vertical-align: middle; }
+
+/* ---------- Aviso ámbar de duplicado (RF05) ---------- */
+.alert-duplicado {
+  background: var(--amber-bg); border: 1px solid var(--amber-border); color: var(--amber-text);
+  border-radius: 10px; padding: .85rem 1rem;
+}
+
+/* ---------- Chip de rol ---------- */
+.rol-chip { font-size: 12px; background: rgba(255,255,255,.15); padding: .15em .6em; border-radius: 20px; }
+
+/* ---------- Distribución por tipo (barras CSS, sin librerías) ---------- */
+.bar-row { display: grid; grid-template-columns: 190px 1fr 46px; align-items: center; gap: .6rem; margin-bottom: .6rem; }
+.bar-track { background: #eef1f5; border-radius: 6px; height: 22px; overflow: hidden; }
+.bar-fill { height: 100%; border-radius: 6px; }
+
+/* ---------- Plantilla de reporte (5.3.4) ---------- */
+.reporte-doc { background: #fff; border: 1px solid #dfe4ea; border-radius: 8px; padding: 2rem; max-width: 900px; margin: 0 auto; box-shadow: 0 4px 18px rgba(0,0,0,.06); }
+.reporte-firma { border-top: 1px solid #333; width: 220px; text-align: center; padding-top: .3rem; font-size: 13px; }
+
+/* ======================= RESPONSIVO (RF09) ======================= */
+.sidebar-backdrop { display: none; }
+@media (max-width: 991.98px) {
+  .sidebar { transform: translateX(-100%); transition: transform .25s ease; box-shadow: 0 0 40px rgba(0,0,0,.4); }
+  .sidebar.open { transform: translateX(0); }
+  .sidebar-backdrop.show { display: block; position: fixed; inset: var(--topbar-h) 0 0 0; background: rgba(0,0,0,.4); z-index: 1015; }
+  .content-area { margin-left: 0; }
+  .action-zone { left: 1rem; right: 1rem; }
+  .action-zone .btn { flex: 1; }        /* botones a ancho completo en móvil */
+  .bar-row { grid-template-columns: 130px 1fr 40px; }
+}
+.menu-toggle { display: none; }
+@media (max-width: 991.98px) { .menu-toggle { display: inline-flex; } }
