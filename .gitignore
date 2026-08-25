@@ -5,3 +5,7 @@ build/
 .env.local
 *.log
 .DS_Store
+
+ceibal-web-prototipo-5.3.zip
+GUIA_COEXION_BASE_DE_DATOS.md
+INFORME_FINAL.md
