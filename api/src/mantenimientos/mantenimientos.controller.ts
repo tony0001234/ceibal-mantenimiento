@@ -1,34 +1,66 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { MantenimientosService } from './mantenimientos.service';
 import { CreateMantenimientoDto } from './dto/create-mantenimiento.dto';
-import { UpdateMantenimientoDto } from './dto/update-mantenimiento.dto';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { RolesGuard } from '../common/guards/roles.guard';
+import { UsuarioActual } from '../common/decorators/usuario-actual.decorator';
 
+// Bitacora digital de mantenimiento (RF03-RF06).
+@ApiTags('mantenimientos')
+@ApiBearerAuth()
+@UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('mantenimientos')
 export class MantenimientosController {
   constructor(private readonly mantenimientosService: MantenimientosService) {}
 
+  // El tecnico responsable se toma automaticamente del usuario autenticado (RF03).
   @Post()
-  create(@Body() createMantenimientoDto: CreateMantenimientoDto) {
-    return this.mantenimientosService.create(createMantenimientoDto);
+  create(
+    @Body() dto: CreateMantenimientoDto,
+    @UsuarioActual('id') tecnicoId: string,
+  ) {
+    return this.mantenimientosService.create(dto, tecnicoId);
   }
 
   @Get()
-  findAll() {
-    return this.mantenimientosService.findAll();
+  findAll(
+    @Query('equipo') equipo?: string,
+    @Query('tipoTrabajo') tipoTrabajo?: string,
+    @Query('desde') desde?: string,
+    @Query('hasta') hasta?: string,
+    @Query('limite') limite?: string,
+  ) {
+    return this.mantenimientosService.findAll({
+      equipo,
+      tipoTrabajo,
+      desde,
+      hasta,
+      limite: limite ? Number(limite) : undefined,
+    });
   }
 
-  @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.mantenimientosService.findOne(+id);
-  }
-
-  @Patch(':id')
-  update(@Param('id') id: string, @Body() updateMantenimientoDto: UpdateMantenimientoDto) {
-    return this.mantenimientosService.update(+id, updateMantenimientoDto);
-  }
-
-  @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.mantenimientosService.remove(+id);
+  // RF05: verificacion de posible duplicado (usada en vivo por el formulario).
+  @Get('duplicado')
+  async duplicado(
+    @Query('equipo') equipo: string,
+    @Query('fecha') fecha: string,
+  ) {
+    if (!equipo || !fecha) return { duplicado: false };
+    const registro = await this.mantenimientosService.buscarDuplicado(
+      equipo,
+      fecha,
+    );
+    return {
+      duplicado: !!registro,
+      registroId: registro?._id ?? null,
+    };
   }
 }

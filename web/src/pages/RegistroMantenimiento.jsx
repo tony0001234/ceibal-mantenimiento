@@ -1,73 +1,124 @@
-import { useState, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { equiposApi, empresasApi, mantenimientosApi } from '../api/services';
+import { mensajeError } from '../api/client';
 import {
-  EQUIPOS, TIPOS_MANTENIMIENTO, PERIODOS, EMPRESAS, MANTENIMIENTOS,
-} from '../data/mockData';
+  TIPOS_MANTENIMIENTO, PERIODOS, ESTADOS_RESULTANTE, TIPO_MANT_LABEL, hoyISO,
+  ordenarEquipos, etiquetaEquipo,
+} from '../data/constants';
 import EstadoBadge from '../components/EstadoBadge';
-import DemoBanner from '../components/DemoBanner';
 
-// Registro de mantenimiento (RF03/RF04/RF05). Pantalla más utilizada del sistema.
-// Formulario a 2 columnas, catálogos con búsqueda, fecha y usuario automáticos,
-// aviso ámbar de posible duplicado y zona de acciones fija.
-const HOY = '2026-08-20';
+// Registro de mantenimiento (RF03/RF04/RF05). El validador de MongoDB exige
+// equipo, empresa, periodo, tipo, descripción, estado resultante, fecha y horas.
+const VACIO = {
+  equipoId: '', tipoTrabajo: '', periodo: '', fecha: hoyISO(), horaInicio: '', horaFin: '',
+  empresaId: '', descripcion: '', repuestos: '', estadoFinal: 'funcionando',
+};
 
 export default function RegistroMantenimiento() {
   const { usuario } = useAuth();
-  const [form, setForm] = useState({
-    equipoId: '', tipo: '', periodo: '', fecha: HOY, horaInicio: '', horaFin: '',
-    empresa: '', descripcion: '', repuestos: '', estadoFinal: 'operativo',
-  });
+  const [equipos, setEquipos] = useState([]);
+  const [empresas, setEmpresas] = useState([]);
+  const [form, setForm] = useState(VACIO);
   const [tocado, setTocado] = useState(false);
   const [guardado, setGuardado] = useState(false);
+  const [guardando, setGuardando] = useState(false);
+  const [error, setError] = useState('');
   const [verHistorial, setVerHistorial] = useState(false);
+  const [historial, setHistorial] = useState([]);
+  const [duplicado, setDuplicado] = useState(null);
 
-  const equipoSel = EQUIPOS.find((e) => String(e.id) === String(form.equipoId));
+  useEffect(() => {
+    equiposApi.listar().then(setEquipos).catch(() => {});
+    empresasApi.listar(true).then(setEmpresas).catch(() => {});
+  }, []);
 
-  // Deteccion de posible duplicado (RF05): mismo equipo, misma fecha.
-  const posibleDuplicado = useMemo(() => {
-    if (!form.equipoId || !form.fecha) return null;
-    return MANTENIMIENTOS.find(
-      (m) => String(m.equipoId) === String(form.equipoId) && m.fecha === form.fecha
-    );
+  const equipoSel = equipos.find((e) => e._id === form.equipoId);
+
+  useEffect(() => {
+    setDuplicado(null);
+    if (!form.equipoId || !form.fecha) return;
+    const t = setTimeout(() => {
+      mantenimientosApi.verificarDuplicado(form.equipoId, form.fecha)
+        .then((r) => setDuplicado(r.duplicado ? r : null))
+        .catch(() => {});
+    }, 300);
+    return () => clearTimeout(t);
   }, [form.equipoId, form.fecha]);
 
-  const historialEquipo = form.equipoId
-    ? MANTENIMIENTOS.filter((m) => String(m.equipoId) === String(form.equipoId))
-    : [];
+  useEffect(() => {
+    if (!form.equipoId) { setHistorial([]); return; }
+    mantenimientosApi.listar({ equipo: form.equipoId }).then(setHistorial).catch(() => {});
+  }, [form.equipoId, guardado]);
 
   const faltan = {
     equipoId: tocado && !form.equipoId,
-    tipo: tocado && !form.tipo,
+    empresaId: tocado && !form.empresaId,
+    tipoTrabajo: tocado && !form.tipoTrabajo,
+    periodo: tocado && !form.periodo,
+    horaInicio: tocado && !form.horaInicio,
+    horaFin: tocado && !form.horaFin,
     descripcion: tocado && !form.descripcion.trim(),
   };
+  const incompleto = !form.equipoId || !form.empresaId || !form.tipoTrabajo
+    || !form.periodo || !form.horaInicio || !form.horaFin || !form.descripcion.trim();
 
   const set = (k, v) => { setForm({ ...form, [k]: v }); setGuardado(false); };
 
-  const guardar = () => {
+  const enviar = async (confirmarDuplicado) => {
     setTocado(true);
-    if (!form.equipoId || !form.tipo || !form.descripcion.trim()) return;
-    // SIMULADO: no se persiste nada.
-    setGuardado(true);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    setError('');
+    if (incompleto) return;
+    setGuardando(true);
+    try {
+      await mantenimientosApi.crear({
+        equipo: form.equipoId,
+        empresa: form.empresaId,
+        periodo: form.periodo,
+        tipoTrabajo: form.tipoTrabajo,
+        descripcionTrabajo: form.descripcion.trim(),
+        repuestosObservaciones: form.repuestos,
+        estadoEquipoResultante: form.estadoFinal,
+        fechaMantenimiento: form.fecha,
+        horaInicio: form.horaInicio,
+        horaFin: form.horaFin,
+        confirmarDuplicado: confirmarDuplicado || undefined,
+      });
+      setGuardado(true);
+      setDuplicado(null);
+      limpiar(true);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } catch (e) {
+      const data = e?.response?.data;
+      if (e?.response?.status === 409 && data?.duplicado) {
+        setDuplicado({ duplicado: true, registroId: data.registroId, exigeConfirmar: true });
+      } else {
+        setError(mensajeError(e, 'No se pudo guardar el registro.'));
+      }
+    } finally {
+      setGuardando(false);
+    }
   };
 
-  const limpiar = () => {
-    setForm({ equipoId: '', tipo: '', periodo: '', fecha: HOY, horaInicio: '', horaFin: '', empresa: '', descripcion: '', repuestos: '', estadoFinal: 'operativo' });
-    setTocado(false); setGuardado(false);
+  const limpiar = (conservarMsg) => {
+    setForm(VACIO);
+    setTocado(false);
+    setDuplicado(null);
+    if (!conservarMsg) setGuardado(false);
   };
 
   return (
     <>
       <h1 className="titulo-pantalla mb-1">Registro de mantenimiento</h1>
       <p className="texto-auxiliar mb-3">Registre una intervención seleccionando el equipo desde el catálogo. La fecha y el técnico se asignan automáticamente.</p>
-      <DemoBanner />
 
       {guardado && (
         <div className="alert alert-success d-flex align-items-center" role="alert">
           <i className="bi bi-check-circle-fill me-2" />
-          <div>Registro guardado correctamente <span className="texto-auxiliar">(simulado — prototipo NO funcional).</span></div>
+          <div>Registro guardado correctamente.</div>
         </div>
       )}
+      {error && <div className="alert alert-danger py-2 px-3">{error}</div>}
 
       <div className="card">
         <div className="card-header py-2 titulo-seccion">Datos de la intervención</div>
@@ -77,28 +128,26 @@ export default function RegistroMantenimiento() {
             <div className="col-12 col-lg-6">
               <div className="mb-3">
                 <label className="form-label">Equipo intervenido <span className="text-danger">*</span></label>
-                {/* Catalogo con busqueda (RF03) mediante datalist con autocompletado */}
                 <input
                   list="lista-equipos"
                   className={`form-control ${faltan.equipoId ? 'is-invalid' : ''}`}
                   placeholder="Busque por número de bien o nombre…"
-                  value={equipoSel ? `${equipoSel.codigo} — ${equipoSel.nombre}` : ''}
+                  value={equipoSel ? etiquetaEquipo(equipoSel) : ''}
                   onChange={(e) => {
-                    const val = e.target.value;
-                    const eq = EQUIPOS.find((x) => `${x.codigo} — ${x.nombre}` === val);
-                    set('equipoId', eq ? eq.id : '');
+                    const eq = equipos.find((x) => etiquetaEquipo(x) === e.target.value);
+                    set('equipoId', eq ? eq._id : '');
                   }}
                 />
                 <datalist id="lista-equipos">
-                  {EQUIPOS.map((e) => <option key={e.id} value={`${e.codigo} — ${e.nombre}`} />)}
+                  {ordenarEquipos(equipos).map((e) => <option key={e._id} value={etiquetaEquipo(e)} />)}
                 </datalist>
                 {faltan.equipoId && <div className="invalid-feedback">Seleccione un equipo del catálogo.</div>}
                 {equipoSel && (
                   <div className="d-flex align-items-center gap-2 mt-2 texto-auxiliar">
                     <EstadoBadge estado={equipoSel.estado} />
-                    <span>· {equipoSel.tipo} · {equipoSel.ubicacion}</span>
+                    <span>· {equipoSel.subTipo} · {equipoSel.ubicacion}</span>
                     <button className="btn btn-link btn-sm p-0 ms-auto" onClick={() => setVerHistorial(!verHistorial)}>
-                      <i className="bi bi-clock-history me-1" />{verHistorial ? 'Ocultar' : 'Ver'} historial ({historialEquipo.length})
+                      <i className="bi bi-clock-history me-1" />{verHistorial ? 'Ocultar' : 'Ver'} historial ({historial.length})
                     </button>
                   </div>
                 )}
@@ -106,39 +155,38 @@ export default function RegistroMantenimiento() {
 
               <div className="mb-3">
                 <label className="form-label">Tipo de mantenimiento <span className="text-danger">*</span></label>
-                <select className={`form-select ${faltan.tipo ? 'is-invalid' : ''}`} value={form.tipo} onChange={(e) => set('tipo', e.target.value)}>
+                <select className={`form-select ${faltan.tipoTrabajo ? 'is-invalid' : ''}`} value={form.tipoTrabajo} onChange={(e) => set('tipoTrabajo', e.target.value)}>
                   <option value="">Seleccione…</option>
-                  {TIPOS_MANTENIMIENTO.map((t) => <option key={t} value={t}>{t}</option>)}
+                  {TIPOS_MANTENIMIENTO.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
                 </select>
-                {faltan.tipo && <div className="invalid-feedback">Seleccione el tipo de mantenimiento.</div>}
+                {faltan.tipoTrabajo && <div className="invalid-feedback">Seleccione el tipo de mantenimiento.</div>}
               </div>
 
               <div className="mb-3">
-                <label className="form-label">Periodo de mantenimiento</label>
-                <select className="form-select" value={form.periodo} onChange={(e) => set('periodo', e.target.value)}>
+                <label className="form-label">Periodo de mantenimiento <span className="text-danger">*</span></label>
+                <select className={`form-select ${faltan.periodo ? 'is-invalid' : ''}`} value={form.periodo} onChange={(e) => set('periodo', e.target.value)}>
                   <option value="">Seleccione…</option>
-                  {PERIODOS.map((p) => <option key={p} value={p}>{p}</option>)}
+                  {PERIODOS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
                 </select>
+                {faltan.periodo && <div className="invalid-feedback">Seleccione el periodo.</div>}
               </div>
 
               <div className="mb-3">
-                <label className="form-label">Empresa / proveedor <span className="texto-auxiliar">(si aplica)</span></label>
-                <select className="form-select" value={form.empresa} onChange={(e) => set('empresa', e.target.value)}>
+                <label className="form-label">Empresa / proveedor <span className="text-danger">*</span></label>
+                <select className={`form-select ${faltan.empresaId ? 'is-invalid' : ''}`} value={form.empresaId} onChange={(e) => set('empresaId', e.target.value)}>
                   <option value="">Seleccione…</option>
-                  {EMPRESAS.map((em) => <option key={em} value={em}>{em}</option>)}
+                  {empresas.map((em) => <option key={em._id} value={em._id}>{em.nombre}</option>)}
                 </select>
+                {faltan.empresaId && <div className="invalid-feedback">Seleccione la empresa o proveedor (use «Interno IGSS» si es interno).</div>}
               </div>
 
               <div className="mb-1">
                 <label className="form-label">Estado final del equipo</label>
                 <div className="btn-group w-100" role="group">
-                  {[
-                    { v: 'operativo', l: 'Funcionando' },
-                    { v: 'fuera_de_servicio', l: 'Fuera de servicio' },
-                  ].map((o) => (
-                    <button key={o.v} type="button"
-                      className={`btn btn-sm ${form.estadoFinal === o.v ? 'btn-primary' : 'btn-outline-primary'}`}
-                      onClick={() => set('estadoFinal', o.v)}>{o.l}</button>
+                  {ESTADOS_RESULTANTE.map((o) => (
+                    <button key={o.value} type="button"
+                      className={`btn btn-sm ${form.estadoFinal === o.value ? 'btn-primary' : 'btn-outline-primary'}`}
+                      onClick={() => set('estadoFinal', o.value)}>{o.label}</button>
                   ))}
                 </div>
               </div>
@@ -148,20 +196,20 @@ export default function RegistroMantenimiento() {
             <div className="col-12 col-lg-6">
               <div className="row g-2 mb-3">
                 <div className="col-6">
-                  <label className="form-label">Fecha <span className="texto-auxiliar">(automática)</span></label>
-                  <input type="date" className="form-control" value={form.fecha} readOnly />
+                  <label className="form-label">Fecha</label>
+                  <input type="date" className="form-control" value={form.fecha} max={hoyISO()} onChange={(e) => set('fecha', e.target.value)} />
                 </div>
                 <div className="col-6">
                   <label className="form-label">Técnico responsable <span className="texto-auxiliar">(automático)</span></label>
                   <input type="text" className="form-control" value={usuario?.nombre || ''} readOnly />
                 </div>
                 <div className="col-6">
-                  <label className="form-label">Hora de entrada</label>
-                  <input type="time" className="form-control" value={form.horaInicio} onChange={(e) => set('horaInicio', e.target.value)} />
+                  <label className="form-label">Hora de entrada <span className="text-danger">*</span></label>
+                  <input type="time" className={`form-control ${faltan.horaInicio ? 'is-invalid' : ''}`} value={form.horaInicio} onChange={(e) => set('horaInicio', e.target.value)} />
                 </div>
                 <div className="col-6">
-                  <label className="form-label">Hora de salida</label>
-                  <input type="time" className="form-control" value={form.horaFin} onChange={(e) => set('horaFin', e.target.value)} />
+                  <label className="form-label">Hora de salida <span className="text-danger">*</span></label>
+                  <input type="time" className={`form-control ${faltan.horaFin ? 'is-invalid' : ''}`} value={form.horaFin} onChange={(e) => set('horaFin', e.target.value)} />
                 </div>
               </div>
 
@@ -181,19 +229,24 @@ export default function RegistroMantenimiento() {
             </div>
           </div>
 
-          {/* Historial embebido (RF06) — sin salir del formulario */}
+          {/* Historial embebido (RF06) */}
           {verHistorial && equipoSel && (
             <div className="mt-4 border-top pt-3">
               <div className="titulo-seccion mb-2" style={{ fontSize: '15px' }}>
-                Historial del equipo {equipoSel.codigo}
+                Historial del equipo {equipoSel.codigoInventario}
               </div>
               <div className="table-responsive">
                 <table className="table table-sm">
                   <thead><tr><th>Fecha</th><th>Tipo</th><th>Técnico</th><th>Estado final</th></tr></thead>
                   <tbody>
-                    {historialEquipo.length === 0 && <tr><td colSpan={4} className="texto-auxiliar">Sin registros previos.</td></tr>}
-                    {historialEquipo.map((m) => (
-                      <tr key={m.id}><td>{m.fecha}</td><td>{m.tipo}</td><td>{m.tecnico}</td><td><EstadoBadge estado={m.estadoFinal} /></td></tr>
+                    {historial.length === 0 && <tr><td colSpan={4} className="texto-auxiliar">Sin registros previos.</td></tr>}
+                    {historial.map((m) => (
+                      <tr key={m._id}>
+                        <td>{m.fechaMantenimiento?.slice(0, 10)}</td>
+                        <td>{TIPO_MANT_LABEL[m.tipoTrabajo] || m.tipoTrabajo}</td>
+                        <td>{m.tecnico?.nombre || '—'}</td>
+                        <td><EstadoBadge estado={m.estadoEquipoResultante} /></td>
+                      </tr>
                     ))}
                   </tbody>
                 </table>
@@ -201,24 +254,33 @@ export default function RegistroMantenimiento() {
             </div>
           )}
 
-          {/* Aviso ámbar de posible duplicado (RF05), antes de los botones */}
-          {posibleDuplicado && (
+          {/* Aviso ámbar de posible duplicado (RF05) */}
+          {duplicado && (
             <div className="alert-duplicado d-flex align-items-start gap-2 mt-3">
               <i className="bi bi-exclamation-triangle-fill mt-1" />
               <div>
                 <strong>Posible duplicado.</strong> Ya existe un mantenimiento registrado para el equipo
-                <strong> {equipoSel?.codigo}</strong> en la fecha <strong>{form.fecha}</strong> (registro N.º {posibleDuplicado.id}).
+                <strong> {equipoSel?.codigoInventario}</strong> en la fecha <strong>{form.fecha}</strong>.
                 Verifique antes de continuar; puede guardar de todos modos si confirma que es una intervención distinta.
+                {duplicado.exigeConfirmar && (
+                  <div className="mt-2">
+                    <button className="btn btn-sm btn-warning" onClick={() => enviar(true)} disabled={guardando}>
+                      <i className="bi bi-check2 me-1" />Guardar de todos modos
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           )}
         </div>
       </div>
 
-      {/* Zona 4: zona de acciones (esquina inferior derecha) */}
+      {/* Zona 4: zona de acciones */}
       <div className="action-zone">
-        <button className="btn btn-outline-secondary" onClick={limpiar}><i className="bi bi-x-lg me-1" />Cancelar</button>
-        <button className="btn btn-primary" onClick={guardar}><i className="bi bi-save me-1" />Guardar</button>
+        <button className="btn btn-outline-secondary" onClick={() => limpiar(false)} disabled={guardando}><i className="bi bi-x-lg me-1" />Cancelar</button>
+        <button className="btn btn-primary" onClick={() => enviar(false)} disabled={guardando}>
+          {guardando ? <><span className="spinner-border spinner-border-sm me-2" />Guardando…</> : <><i className="bi bi-save me-1" />Guardar</>}
+        </button>
       </div>
     </>
   );

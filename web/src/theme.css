@@ -201,3 +201,23 @@ a { color: var(--ceibal-azul-700); }
 }
 .menu-toggle { display: none; }
 @media (max-width: 991.98px) { .menu-toggle { display: inline-flex; } }
+
+/* ---------- Modal simple (alta/edición de equipos y usuarios) ---------- */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 30, 55, 0.45);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 4vh 1rem;
+  z-index: 1080;
+  overflow-y: auto;
+}
+.modal-panel {
+  width: 100%;
+  max-width: 640px;
+}
+.modal-panel .card {
+  box-shadow: 0 18px 48px rgba(15, 30, 55, 0.28);
+}

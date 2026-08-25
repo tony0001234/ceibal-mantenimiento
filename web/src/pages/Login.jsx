@@ -1,32 +1,37 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
-// Pantalla de inicio de sesión (RF01). Diseño basado en el mockup institucional.
+// Pantalla de inicio de sesion (RF01). Login por correo institucional.
+const CON_PANEL = ['administrador', 'supervisor', 'auditor'];
+const destinoPara = (rol) => (CON_PANEL.includes(rol) ? '/app/panel' : '/app/equipos');
+
 export default function Login() {
   const { usuario, login } = useAuth();
   const navigate = useNavigate();
-  const [form, setForm] = useState({ usuario: '', clave: '' });
+  const [form, setForm] = useState({ correo: '', clave: '' });
   const [verClave, setVerClave] = useState(false);
   const [error, setError] = useState('');
   const [tocado, setTocado] = useState(false);
+  const [enviando, setEnviando] = useState(false);
 
-  if (usuario) { navigate('/app/equipos'); }
+  useEffect(() => {
+    if (usuario) navigate(destinoPara(usuario.rol), { replace: true });
+  }, [usuario, navigate]);
 
-  const submit = (e) => {
+  const submit = async (e) => {
     e.preventDefault();
     setTocado(true);
-    if (!form.usuario || !form.clave) { setError(''); return; }
-    const r = login(form.usuario, form.clave);
-    if (r.ok) {
-      // Redirige al panel si el rol lo tiene; si no, a Equipos.
-      navigate('/app/panel');
-    } else {
-      setError(r.error);
-    }
+    setError('');
+    if (!form.correo || !form.clave) return;
+    setEnviando(true);
+    const r = await login(form.correo.trim(), form.clave);
+    setEnviando(false);
+    if (r.ok) navigate(destinoPara(r.usuario.rol), { replace: true });
+    else setError(r.error);
   };
 
-  const faltaUsuario = tocado && !form.usuario;
+  const faltaCorreo = tocado && !form.correo;
   const faltaClave = tocado && !form.clave;
 
   return (
@@ -45,15 +50,16 @@ export default function Login() {
           )}
           <form onSubmit={submit} noValidate>
             <div className="mb-3">
-              <label className="form-label">Usuario</label>
+              <label className="form-label">Correo institucional</label>
               <input
-                type="text"
-                className={`form-control form-control-lg ${faltaUsuario ? 'is-invalid' : ''}`}
-                placeholder="Ingrese su usuario"
-                value={form.usuario}
-                onChange={(e) => setForm({ ...form, usuario: e.target.value })}
+                type="email"
+                className={`form-control form-control-lg ${faltaCorreo ? 'is-invalid' : ''}`}
+                placeholder="usuario@igssceibal.gob.gt"
+                value={form.correo}
+                autoComplete="username"
+                onChange={(e) => setForm({ ...form, correo: e.target.value })}
               />
-              {faltaUsuario && <div className="invalid-feedback">Este campo es obligatorio.</div>}
+              {faltaCorreo && <div className="invalid-feedback">Este campo es obligatorio.</div>}
             </div>
             <div className="mb-4">
               <label className="form-label">Contraseña</label>
@@ -63,6 +69,7 @@ export default function Login() {
                   className={`form-control ${faltaClave ? 'is-invalid' : ''}`}
                   placeholder="Ingrese su contraseña"
                   value={form.clave}
+                  autoComplete="current-password"
                   onChange={(e) => setForm({ ...form, clave: e.target.value })}
                 />
                 <button type="button" className="btn btn-outline-secondary" onClick={() => setVerClave(!verClave)} tabIndex={-1}>
@@ -72,15 +79,17 @@ export default function Login() {
               </div>
             </div>
             <div className="d-grid">
-              <button type="submit" className="btn btn-primary btn-lg">
-                <i className="bi bi-box-arrow-in-right me-2" />Iniciar sesión
+              <button type="submit" className="btn btn-primary btn-lg" disabled={enviando}>
+                {enviando
+                  ? <><span className="spinner-border spinner-border-sm me-2" />Ingresando…</>
+                  : <><i className="bi bi-box-arrow-in-right me-2" />Iniciar sesión</>}
               </button>
             </div>
           </form>
           <div className="text-center mt-3 texto-auxiliar">
             <div>Acceso restringido al personal autorizado</div>
             <div className="mt-1">
-              <strong>Demo:</strong> admin / admin123&nbsp;·&nbsp;pgarcia / tecnico123&nbsp;·&nbsp;rlopez / super123
+              <strong>Usuarios de prueba (tras el seed):</strong> amorales@igssceibal.gob.gt / admin123&nbsp;·&nbsp;rlopez@igssceibal.gob.gt / super123&nbsp;·&nbsp;pgarcia@igssceibal.gob.gt / tecnico123
             </div>
           </div>
         </div>

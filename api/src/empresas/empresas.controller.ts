@@ -1,34 +1,49 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { EmpresasService } from './empresas.service';
 import { CreateEmpresaDto } from './dto/create-empresa.dto';
 import { UpdateEmpresaDto } from './dto/update-empresa.dto';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { RolesGuard } from '../common/guards/roles.guard';
+import { Roles } from '../common/decorators/roles.decorator';
 
+@ApiTags('empresas')
+@ApiBearerAuth()
+@UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('empresas')
 export class EmpresasController {
   constructor(private readonly empresasService: EmpresasService) {}
 
+  @Roles('administrador')
   @Post()
-  create(@Body() createEmpresaDto: CreateEmpresaDto) {
-    return this.empresasService.create(createEmpresaDto);
+  create(@Body() dto: CreateEmpresaDto) {
+    return this.empresasService.create(dto);
   }
 
+  // Cualquier rol puede listar empresas (para seleccionarlas en la bitacora).
   @Get()
-  findAll() {
-    return this.empresasService.findAll();
+  findAll(@Query('activas') activas?: string) {
+    return this.empresasService.findAll(activas === 'true');
   }
 
-  @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.empresasService.findOne(+id);
-  }
-
+  @Roles('administrador')
   @Patch(':id')
-  update(@Param('id') id: string, @Body() updateEmpresaDto: UpdateEmpresaDto) {
-    return this.empresasService.update(+id, updateEmpresaDto);
+  update(@Param('id') id: string, @Body() dto: UpdateEmpresaDto) {
+    return this.empresasService.update(id, dto);
   }
 
-  @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.empresasService.remove(+id);
+  @Roles('administrador')
+  @Patch(':id/desactivar')
+  desactivar(@Param('id') id: string) {
+    return this.empresasService.desactivar(id);
   }
 }

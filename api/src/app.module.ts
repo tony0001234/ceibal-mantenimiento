@@ -1,8 +1,15 @@
 import { Module } from '@nestjs/common';
-import { AppController } from './app.controller';
-import { AppService } from './app.service';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
+import { AppController } from './app.controller';
+import { AppService } from './app.service';
+import { AuthModule } from './auth/auth.module';
+import { UsuariosModule } from './usuarios/usuarios.module';
+import { EmpresasModule } from './empresas/empresas.module';
+import { EquiposModule } from './equipos/equipos.module';
+import { MantenimientosModule } from './mantenimientos/mantenimientos.module';
+import { CatalogosModule } from './catalogos/catalogos.module';
+import { ReportesModule } from './reportes/reportes.module';
 
 @Module({
   imports: [
@@ -13,7 +20,13 @@ import { MongooseModule } from '@nestjs/mongoose';
         uri: config.get<string>('MONGODB_URI'),
       }),
     }),
-    // los modulos de funcionalidad se agregan en el p 5.4
+    AuthModule,
+    UsuariosModule,
+    EmpresasModule,
+    EquiposModule,
+    MantenimientosModule,
+    CatalogosModule,
+    ReportesModule,
   ],
   controllers: [AppController],
   providers: [AppService],

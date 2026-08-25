@@ -1,26 +1,117 @@
-import { Injectable } from '@nestjs/common';
+import { ConflictException, Injectable } from '@nestjs/common';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model, Types } from 'mongoose';
+import {
+  Mantenimiento,
+  MantenimientoDocument,
+} from './schemas/mantenimiento.schema';
 import { CreateMantenimientoDto } from './dto/create-mantenimiento.dto';
-import { UpdateMantenimientoDto } from './dto/update-mantenimiento.dto';
+import { EquiposService } from '../equipos/equipos.service';
+
+const POPULATE = [
+  { path: 'equipo', select: 'codigoInventario nombre tipoEquipo ubicacion estado' },
+  { path: 'tecnico', select: 'nombre correo rol' },
+  { path: 'empresa', select: 'nombre' },
+];
 
 @Injectable()
 export class MantenimientosService {
-  create(createMantenimientoDto: CreateMantenimientoDto) {
-    return 'This action adds a new mantenimiento';
+  constructor(
+    @InjectModel(Mantenimiento.name)
+    private mantenimientoModel: Model<MantenimientoDocument>,
+    private equiposService: EquiposService,
+  ) {}
+
+  private rangoDia(fecha: string | Date) {
+    const inicio = new Date(fecha);
+    inicio.setHours(0, 0, 0, 0);
+    const fin = new Date(inicio);
+    fin.setDate(fin.getDate() + 1);
+    return { inicio, fin };
   }
 
-  findAll() {
-    return `This action returns all mantenimientos`;
+  // Combina "YYYY-MM-DD" + "HH:MM" en un objeto Date (hora local).
+  private combinarFechaHora(fecha: string, hora: string): Date {
+    return new Date(`${fecha}T${hora}:00`);
   }
 
-  findOne(id: number) {
-    return `This action returns a #${id} mantenimiento`;
+  // RF05: verifica si ya existe un mantenimiento para el mismo equipo y fecha.
+  async buscarDuplicado(equipo: string, fecha: string | Date) {
+    const { inicio, fin } = this.rangoDia(fecha);
+    return this.mantenimientoModel
+      .findOne({
+        equipo: new Types.ObjectId(equipo),
+        fechaMantenimiento: { $gte: inicio, $lt: fin },
+      })
+      .exec();
   }
 
-  update(id: number, updateMantenimientoDto: UpdateMantenimientoDto) {
-    return `This action updates a #${id} mantenimiento`;
+  async create(
+    dto: CreateMantenimientoDto,
+    tecnicoId: string,
+  ): Promise<Mantenimiento> {
+    if (!dto.confirmarDuplicado) {
+      const duplicado = await this.buscarDuplicado(
+        dto.equipo,
+        dto.fechaMantenimiento,
+      );
+      if (duplicado) {
+        throw new ConflictException({
+          duplicado: true,
+          registroId: duplicado._id,
+          message:
+            'Ya existe un mantenimiento registrado para este equipo en esta fecha. Confirme si desea guardarlo de todos modos.',
+        });
+      }
+    }
+
+    const creado = new this.mantenimientoModel({
+      equipo: new Types.ObjectId(dto.equipo),
+      tecnico: new Types.ObjectId(tecnicoId),
+      empresa: new Types.ObjectId(dto.empresa),
+      periodo: dto.periodo,
+      tipoTrabajo: dto.tipoTrabajo,
+      descripcionTrabajo: dto.descripcionTrabajo,
+      repuestosObservaciones: dto.repuestosObservaciones || '',
+      estadoEquipoResultante: dto.estadoEquipoResultante,
+      fechaMantenimiento: new Date(dto.fechaMantenimiento),
+      horaInicio: this.combinarFechaHora(dto.fechaMantenimiento, dto.horaInicio),
+      horaFin: this.combinarFechaHora(dto.fechaMantenimiento, dto.horaFin),
+    });
+    const guardado = await creado.save();
+
+    // Ciclo de vida del equipo (5.2.4): estado resultante -> estado del equipo.
+    // funcionando -> ACTIVO ; fuera_de_servicio -> INACTIVO (valores del validador).
+    const nuevoEstado =
+      dto.estadoEquipoResultante === 'funcionando' ? 'ACTIVO' : 'INACTIVO';
+    await this.equiposService.actualizarEstado(dto.equipo, nuevoEstado);
+
+    return guardado.populate(POPULATE);
   }
 
-  remove(id: number) {
-    return `This action removes a #${id} mantenimiento`;
+  findAll(params: {
+    equipo?: string;
+    tipoTrabajo?: string;
+    desde?: string;
+    hasta?: string;
+    limite?: number;
+  }): Promise<Mantenimiento[]> {
+    const filtro: any = {};
+    if (params.equipo) filtro.equipo = new Types.ObjectId(params.equipo);
+    if (params.tipoTrabajo) filtro.tipoTrabajo = params.tipoTrabajo;
+    if (params.desde || params.hasta) {
+      filtro.fechaMantenimiento = {};
+      if (params.desde) filtro.fechaMantenimiento.$gte = new Date(params.desde);
+      if (params.hasta) {
+        const { fin } = this.rangoDia(params.hasta);
+        filtro.fechaMantenimiento.$lt = fin;
+      }
+    }
+    const q = this.mantenimientoModel
+      .find(filtro)
+      .sort({ fechaMantenimiento: -1, createdAt: -1 })
+      .populate(POPULATE);
+    if (params.limite) q.limit(params.limite);
+    return q.exec();
   }
 }

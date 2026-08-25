@@ -1,15 +1,32 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { UsuariosService } from './usuarios.service';
 import { CreateUsuarioDto } from './dto/create-usuario.dto';
 import { UpdateUsuarioDto } from './dto/update-usuario.dto';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { RolesGuard } from '../common/guards/roles.guard';
+import { Roles } from '../common/decorators/roles.decorator';
 
+// Administracion de usuarios (RF10): solo el rol administrador.
+@ApiTags('usuarios')
+@ApiBearerAuth()
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles('administrador')
 @Controller('usuarios')
 export class UsuariosController {
   constructor(private readonly usuariosService: UsuariosService) {}
 
   @Post()
-  create(@Body() createUsuarioDto: CreateUsuarioDto) {
-    return this.usuariosService.create(createUsuarioDto);
+  create(@Body() dto: CreateUsuarioDto) {
+    return this.usuariosService.create(dto);
   }
 
   @Get()
@@ -19,16 +36,16 @@ export class UsuariosController {
 
   @Get(':id')
   findOne(@Param('id') id: string) {
-    return this.usuariosService.findOne(+id);
+    return this.usuariosService.findOne(id);
   }
 
   @Patch(':id')
-  update(@Param('id') id: string, @Body() updateUsuarioDto: UpdateUsuarioDto) {
-    return this.usuariosService.update(+id, updateUsuarioDto);
+  update(@Param('id') id: string, @Body() dto: UpdateUsuarioDto) {
+    return this.usuariosService.update(id, dto);
   }
 
-  @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.usuariosService.remove(+id);
+  @Patch(':id/desactivar')
+  desactivar(@Param('id') id: string) {
+    return this.usuariosService.desactivar(id);
   }
 }

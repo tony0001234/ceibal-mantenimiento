@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { NavLink, useNavigate, Outlet, Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { MODULOS } from '../data/mockData';
+import { MODULOS, ROL_LABEL } from '../data/constants';
 
 // Estructura base de 4 zonas (5.3.3), compartida por todas las pantallas.
 export default function Layout() {
@@ -30,7 +30,7 @@ export default function Layout() {
         <div className="ms-auto d-flex align-items-center gap-2">
           <div className="text-end d-none d-sm-block lh-1">
             <div style={{ fontSize: '14px' }}>{usuario.nombre}</div>
-            <span className="rol-chip">{usuario.rol}</span>
+            <span className="rol-chip">{ROL_LABEL[usuario.rol] || usuario.rol}</span>
           </div>
           <div className="brand-emblem"><i className="bi bi-person" /></div>
           <button className="btn btn-sm btn-outline-light" onClick={salir}>

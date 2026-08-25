@@ -1,26 +1,44 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
+import { Empresa, EmpresaDocument } from './schema/empresa.schema';
 import { CreateEmpresaDto } from './dto/create-empresa.dto';
 import { UpdateEmpresaDto } from './dto/update-empresa.dto';
 
 @Injectable()
 export class EmpresasService {
-  create(createEmpresaDto: CreateEmpresaDto) {
-    return 'This action adds a new empresa';
+  constructor(
+    @InjectModel(Empresa.name) private empresaModel: Model<EmpresaDocument>,
+  ) {}
+
+  create(dto: CreateEmpresaDto): Promise<Empresa> {
+    return new this.empresaModel(dto).save();
   }
 
-  findAll() {
-    return `This action returns all empresas`;
+  findAll(soloActivas?: boolean): Promise<Empresa[]> {
+    const filtro = soloActivas ? { activo: true } : {};
+    return this.empresaModel.find(filtro).sort({ nombre: 1 }).exec();
   }
 
-  findOne(id: number) {
-    return `This action returns a #${id} empresa`;
+  async findOne(id: string): Promise<Empresa> {
+    const empresa = await this.empresaModel.findById(id).exec();
+    if (!empresa) throw new NotFoundException('Empresa no encontrada.');
+    return empresa;
   }
 
-  update(id: number, updateEmpresaDto: UpdateEmpresaDto) {
-    return `This action updates a #${id} empresa`;
+  async update(id: string, dto: UpdateEmpresaDto): Promise<Empresa> {
+    const actualizada = await this.empresaModel
+      .findByIdAndUpdate(id, dto, { new: true })
+      .exec();
+    if (!actualizada) throw new NotFoundException('Empresa no encontrada.');
+    return actualizada;
   }
 
-  remove(id: number) {
-    return `This action removes a #${id} empresa`;
+  async desactivar(id: string): Promise<Empresa> {
+    const actualizada = await this.empresaModel
+      .findByIdAndUpdate(id, { activo: false }, { new: true })
+      .exec();
+    if (!actualizada) throw new NotFoundException('Empresa no encontrada.');
+    return actualizada;
   }
 }
