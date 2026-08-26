@@ -70,30 +70,8 @@ async function main() {
     ]);
   }
 
-  // ---------- Usuarios (login por correo) ----------
-  if ((await Usuario.countDocuments()) === 0) {
-    const h = (c: string) => bcrypt.hashSync(c, 10);
-    await Usuario.insertMany([
-      { nombre: 'Ana Morales', correo: 'amorales@igssceibal.gob.gt', contrasenaHash: h('admin123'), rol: 'administrador', activo: true },
-      { nombre: 'Rosa Lopez', correo: 'rlopez@igssceibal.gob.gt', contrasenaHash: h('super123'), rol: 'supervisor', activo: true },
-      { nombre: 'Pablo Garcia', correo: 'pgarcia@igssceibal.gob.gt', contrasenaHash: h('tecnico123'), rol: 'tecnico', activo: true },
-      { nombre: 'Julio Mendez', correo: 'jmendez@igssceibal.gob.gt', contrasenaHash: h('tecnico123'), rol: 'tecnico', activo: false },
-    ]);
-    console.log('[seed] Usuarios creados. Login por correo: amorales@igssceibal.gob.gt / admin123, rlopez@.../super123, pgarcia@.../tecnico123');
-  } else {
-    console.log('[seed] Usuarios ya existen: se omite.');
-  }
-
-  // ---------- Catalogo de ubicaciones (campo libre en el validador) ----------
-  if ((await Catalogo.countDocuments()) === 0) {
-    const ubicaciones = ['Sala de Operaciones', 'Emergencia', 'Encamamiento 2do nivel', 'Laboratorio', 'Consulta externa', 'Rayos X', 'Farmacia', 'Cocina', 'UCI'];
-    await Catalogo.insertMany(ubicaciones.map((valor) => ({ tipo: 'ubicacion', valor })));
-    console.log('[seed] Catalogo de ubicaciones creado.');
-  } else {
-    console.log('[seed] Catalogo ya existe: se omite.');
-  }
-
   // ---------- Empresas (nombre, nit, correo, telefono obligatorios) ----------
+  // Se crean ANTES que los usuarios porque todo usuario esta afiliado a una empresa.
   let empresas: any[] = await Empresa.find();
   if (empresas.length === 0) {
     empresas = await Empresa.insertMany([
@@ -104,6 +82,39 @@ async function main() {
     console.log('[seed] Empresas creadas.');
   }
   const empId = (n: string) => empresas.find((e) => e.nombre.startsWith(n))?._id;
+
+  // ---------- Usuarios (login por correo; cada uno afiliado a una empresa) ----------
+  // Regla: tecnico -> su empresa de servicio; supervisor/administrador/auditor -> Interno IGSS.
+  if ((await Usuario.countDocuments()) === 0) {
+    const h = (c: string) => bcrypt.hashSync(c, 10);
+    await Usuario.insertMany([
+      { nombre: 'Ana Morales', correo: 'amorales@igssceibal.gob.gt', contrasenaHash: h('admin123'), rol: 'administrador', activo: true, empresa: empId('Interno') },
+      { nombre: 'Rosa Lopez', correo: 'rlopez@igssceibal.gob.gt', contrasenaHash: h('super123'), rol: 'supervisor', activo: true, empresa: empId('Interno') },
+      { nombre: 'Pablo Garcia', correo: 'pgarcia@igssceibal.gob.gt', contrasenaHash: h('tecnico123'), rol: 'tecnico', activo: true, empresa: empId('Servicios') },
+      { nombre: 'Julio Mendez', correo: 'jmendez@igssceibal.gob.gt', contrasenaHash: h('tecnico123'), rol: 'tecnico', activo: false, empresa: empId('Frio') },
+    ]);
+    console.log('[seed] Usuarios creados. Login por correo: amorales@igssceibal.gob.gt / admin123, rlopez@.../super123, pgarcia@.../tecnico123');
+  } else {
+    console.log('[seed] Usuarios ya existen: se omite.');
+  }
+
+  // ---------- Catalogos editables (ubicacion, tipoEquipo, subTipo, marca) ----------
+  if ((await Catalogo.countDocuments()) === 0) {
+    const ubicaciones = ['Sala de Operaciones', 'Emergencia', 'Encamamiento 2do nivel', 'Laboratorio', 'Consulta externa', 'Rayos X', 'Farmacia', 'Cocina', 'UCI'];
+    const tiposEquipo = ['Refrigeración'];
+    // Subtipos: cada uno cuelga de su tipo de equipo (padre).
+    const subtipos = ['Split', 'Mini-split', 'Cassette', 'Ventana', 'Paquete'];
+    const marcas = ['Rheem', 'Tempstar', 'York', 'Comfortstar', 'Lennox', 'Adina', 'Mcquay Daikin', 'Fedders', 'Aireone', 'Primiumcool', 'S/M', 'Pretul', 'Premium', 'Innovair', 'Everwell'];
+    await Catalogo.insertMany([
+      ...ubicaciones.map((valor) => ({ tipo: 'ubicacion', valor, padre: null })),
+      ...tiposEquipo.map((valor) => ({ tipo: 'tipoEquipo', valor, padre: null })),
+      ...subtipos.map((valor) => ({ tipo: 'subTipo', valor, padre: 'Refrigeración' })),
+      ...marcas.map((valor) => ({ tipo: 'marca', valor, padre: null })),
+    ]);
+    console.log('[seed] Catalogos (ubicacion, tipoEquipo, subTipo, marca) creados.');
+  } else {
+    console.log('[seed] Catalogo ya existe: se omite.');
+  }
 
   // ---------- Equipos (solo Refrigeración; valores del validador) ----------
   let equipos: any[] = await Equipo.find();

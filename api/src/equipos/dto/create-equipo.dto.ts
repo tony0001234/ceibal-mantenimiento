@@ -1,8 +1,5 @@
 import { IsEnum, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 import {
-  TIPOS_EQUIPO,
-  SUBTIPOS_EQUIPO,
-  MARCAS_EQUIPO,
   ESTADOS_EQUIPO,
   CRITICIDADES_EQUIPO,
 } from '../schemas/equipo.schema';
@@ -16,13 +13,17 @@ export class CreateEquipoDto {
   @IsNotEmpty()
   nombre: string;
 
-  @IsEnum(TIPOS_EQUIPO, { message: 'Tipo de equipo invalido.' })
+  // tipoEquipo, subTipo y marca son catalogos editables (texto).
+  @IsString()
+  @IsNotEmpty({ message: 'Seleccione el tipo de equipo.' })
   tipoEquipo: string;
 
-  @IsEnum(SUBTIPOS_EQUIPO, { message: 'Subtipo invalido.' })
+  @IsString()
+  @IsNotEmpty({ message: 'Seleccione el subtipo.' })
   subTipo: string;
 
-  @IsEnum(MARCAS_EQUIPO, { message: 'Marca invalida.' })
+  @IsString()
+  @IsNotEmpty({ message: 'Seleccione la marca.' })
   marca: string;
 
   @IsString()

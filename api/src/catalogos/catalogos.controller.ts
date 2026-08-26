@@ -24,8 +24,8 @@ export class CatalogosController {
   constructor(private readonly catalogosService: CatalogosService) {}
 
   @Get()
-  findAll(@Query('tipo') tipo?: string) {
-    return this.catalogosService.findAll(tipo);
+  findAll(@Query('tipo') tipo?: string, @Query('padre') padre?: string) {
+    return this.catalogosService.findAll(tipo, padre);
   }
 
   @Roles('administrador')

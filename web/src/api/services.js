@@ -81,11 +81,17 @@ export const empresasApi = {
 };
 
 // -------------------- Catalogos (RF10) --------------------
+// tipo: 'tipoEquipo' | 'subTipo' | 'marca' | 'ubicacion'.
+// padre: solo para 'subTipo' (el tipoEquipo al que pertenece).
 export const catalogosApi = {
-  listar: (tipo) =>
-    api.get('/catalogos', { params: tipo ? { tipo } : {} }).then((r) => r.data),
-  crear: (tipo, valor) =>
-    api.post('/catalogos', { tipo, valor }).then((r) => r.data),
+  listar: (tipo, padre) => {
+    const params = {};
+    if (tipo) params.tipo = tipo;
+    if (padre) params.padre = padre;
+    return api.get('/catalogos', { params }).then((r) => r.data);
+  },
+  crear: (tipo, valor, padre) =>
+    api.post('/catalogos', padre ? { tipo, valor, padre } : { tipo, valor }).then((r) => r.data),
   desactivar: (id) =>
     api.patch(`/catalogos/${id}/desactivar`).then((r) => r.data),
 };

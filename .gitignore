@@ -9,6 +9,9 @@ build/
 ceibal-web-prototipo-5.3.zip
 GUIA_COEXION_BASE_DE_DATOS.md
 INFORME_FINAL.md
+INFORME-EMPRESA-AFILIADA.md
+INFORME-SEED-LISTADOS.md
+seed-listados-equipos.ts
 api/.env.example
 
 

@@ -1,4 +1,4 @@
-import { IsEnum, IsNotEmpty, IsString } from 'class-validator';
+import { IsEnum, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 import { TIPOS_CATALOGO } from '../schemas/catalogo.schema';
 
 export class CreateCatalogoDto {
@@ -8,4 +8,9 @@ export class CreateCatalogoDto {
   @IsString()
   @IsNotEmpty({ message: 'El valor del catalogo es obligatorio.' })
   valor: string;
+
+  // Requerido cuando tipo === 'subTipo': el tipoEquipo padre.
+  @IsOptional()
+  @IsString()
+  padre?: string;
 }

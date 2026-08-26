@@ -2,6 +2,7 @@ import {
   IsBoolean,
   IsEmail,
   IsEnum,
+  IsMongoId,
   IsNotEmpty,
   IsOptional,
   IsString,
@@ -23,6 +24,10 @@ export class CreateUsuarioDto {
 
   @IsEnum(ROLES, { message: 'Rol invalido.' })
   rol: string;
+
+  // Empresa afiliada (obligatoria): id de una empresa existente.
+  @IsMongoId({ message: 'Seleccione una empresa afiliada valida.' })
+  empresa: string;
 
   @IsOptional()
   @IsBoolean()

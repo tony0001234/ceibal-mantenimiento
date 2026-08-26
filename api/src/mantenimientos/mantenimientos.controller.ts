@@ -21,13 +21,14 @@ import { UsuarioActual } from '../common/decorators/usuario-actual.decorator';
 export class MantenimientosController {
   constructor(private readonly mantenimientosService: MantenimientosService) {}
 
-  // El tecnico responsable se toma automaticamente del usuario autenticado (RF03).
+  // El tecnico y la empresa se toman automaticamente del usuario autenticado
+  // (RF03 + regla de afiliacion). El cliente no puede elegir otra empresa.
   @Post()
   create(
     @Body() dto: CreateMantenimientoDto,
-    @UsuarioActual('id') tecnicoId: string,
+    @UsuarioActual() user: any,
   ) {
-    return this.mantenimientosService.create(dto, tecnicoId);
+    return this.mantenimientosService.create(dto, user.id, user?.empresa?.id);
   }
 
   @Get()

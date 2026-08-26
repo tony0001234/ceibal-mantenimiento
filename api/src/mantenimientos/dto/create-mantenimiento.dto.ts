@@ -15,9 +15,8 @@ export class CreateMantenimientoDto {
   @IsMongoId({ message: 'Seleccione un equipo del catalogo.' })
   equipo: string;
 
-  // Obligatorio (el validador de la BD lo exige).
-  @IsMongoId({ message: 'Seleccione la empresa/proveedor.' })
-  empresa: string;
+  // NOTA: la empresa NO se recibe del cliente. El backend la toma de la
+  // empresa afiliada del usuario autenticado (regla de negocio y seguridad).
 
   @IsEnum(['mensual', 'cuatrimestral', 'garantia'], {
     message: 'Seleccione el periodo de mantenimiento.',

@@ -30,11 +30,18 @@ export class AuthService {
     );
     if (!coincide) throw credencialesInvalidas;
 
+    // La empresa viene poblada ({_id, nombre}) desde findByCorreo.
+    const emp: any = usuario.empresa;
+    const empresa = emp
+      ? { id: emp._id ?? emp, nombre: emp.nombre ?? null }
+      : null;
+
     const payload = {
       sub: usuario._id,
       correo: usuario.correo,
       nombre: usuario.nombre,
       rol: usuario.rol,
+      empresa,
     };
 
     return {
@@ -44,6 +51,7 @@ export class AuthService {
         nombre: usuario.nombre,
         correo: usuario.correo,
         rol: usuario.rol,
+        empresa,
       },
     };
   }

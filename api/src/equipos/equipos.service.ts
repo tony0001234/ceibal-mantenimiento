@@ -32,11 +32,13 @@ export class EquiposService {
   findAll(params: {
     buscar?: string;
     tipoEquipo?: string;
+    subTipo?: string;
     estado?: string;
     ubicacion?: string;
   }): Promise<Equipo[]> {
     const filtro: any = {};
     if (params.tipoEquipo) filtro.tipoEquipo = params.tipoEquipo;
+    if (params.subTipo) filtro.subTipo = params.subTipo;
     if (params.estado) filtro.estado = params.estado;
     if (params.ubicacion) filtro.ubicacion = params.ubicacion;
     if (params.buscar) {

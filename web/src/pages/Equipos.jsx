@@ -3,13 +3,15 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { equiposApi, catalogosApi } from '../api/services';
 import { mensajeError } from '../api/client';
-import { ESTADOS, ESTADOS_EQUIPO, CRITICIDADES, TIPOS_EQUIPO, SUBTIPOS, MARCAS } from '../data/constants';
+import { ESTADOS, ESTADOS_EQUIPO, CRITICIDADES } from '../data/constants';
 import EstadoBadge from '../components/EstadoBadge';
 
-// Modulo de equipos (RF02). Valores cerrados segun el validador de MongoDB.
+// Modulo de equipos (RF02). tipoEquipo, subTipo y marca provienen de los
+// catalogos editables (Administracion → Catalogos). Estado y criticidad son
+// listas fijas del validador de MongoDB.
 const POR_PAGINA = 8;
 const VACIO = {
-  codigoInventario: '', nombre: '', tipoEquipo: 'Refrigeración', subTipo: '',
+  codigoInventario: '', nombre: '', tipoEquipo: '', subTipo: '',
   marca: '', serie: '', ubicacion: '', estado: 'ACTIVO', criticidad: 'MEDIA',
 };
 
@@ -24,8 +26,13 @@ export default function Equipos() {
   const [busqueda, setBusqueda] = useState('');
   const [fEstado, setFEstado] = useState('');
   const [fUbicacion, setFUbicacion] = useState('');
+  const [fTipo, setFTipo] = useState('');
+  const [fSubtipo, setFSubtipo] = useState('');
   const [pagina, setPagina] = useState(1);
   const [ubicaciones, setUbicaciones] = useState([]);
+  const [tiposEquipo, setTiposEquipo] = useState([]);
+  const [subtipos, setSubtipos] = useState([]); // {valor, padre}
+  const [marcas, setMarcas] = useState([]);
 
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState(VACIO);
@@ -38,6 +45,8 @@ export default function Equipos() {
     try {
       const params = {};
       if (busqueda.trim()) params.buscar = busqueda.trim();
+      if (fTipo) params.tipoEquipo = fTipo;
+      if (fSubtipo) params.subTipo = fSubtipo;
       if (fEstado) params.estado = fEstado;
       if (fUbicacion) params.ubicacion = fUbicacion;
       const data = await equiposApi.listar(params);
@@ -48,7 +57,7 @@ export default function Equipos() {
     } finally {
       setCargando(false);
     }
-  }, [busqueda, fEstado, fUbicacion]);
+  }, [busqueda, fTipo, fSubtipo, fEstado, fUbicacion]);
 
   useEffect(() => {
     const t = setTimeout(cargar, 300);
@@ -59,7 +68,31 @@ export default function Equipos() {
     catalogosApi.listar('ubicacion')
       .then((data) => setUbicaciones((data || []).map((x) => x.valor)))
       .catch(() => {});
+    catalogosApi.listar('tipoEquipo')
+      .then((data) => setTiposEquipo((data || []).map((x) => x.valor)))
+      .catch(() => {});
+    catalogosApi.listar('subTipo')
+      .then((data) => setSubtipos((data || []).map((x) => ({ valor: x.valor, padre: x.padre }))))
+      .catch(() => {});
+    catalogosApi.listar('marca')
+      .then((data) => setMarcas((data || []).map((x) => x.valor)))
+      .catch(() => {});
   }, []);
+
+  // Subtipos disponibles segun el tipo de equipo seleccionado (padre) en el modal.
+  const subtiposDisponibles = subtipos
+    .filter((s) => !form.tipoEquipo || s.padre === form.tipoEquipo)
+    .map((s) => s.valor);
+
+  // Subtipos disponibles para el FILTRO segun el tipo filtrado.
+  const subtiposFiltro = subtipos
+    .filter((s) => !fTipo || s.padre === fTipo)
+    .map((s) => s.valor);
+
+  const limpiarFiltros = () => {
+    setBusqueda(''); setFTipo(''); setFSubtipo(''); setFEstado(''); setFUbicacion('');
+  };
+  const hayFiltros = busqueda || fTipo || fSubtipo || fEstado || fUbicacion;
 
   const totalPaginas = Math.max(1, Math.ceil(equipos.length / POR_PAGINA));
   const paginaActual = Math.min(pagina, totalPaginas);
@@ -78,8 +111,8 @@ export default function Equipos() {
 
   const guardar = async () => {
     setErrorModal('');
-    if (!form.codigoInventario.trim() || !form.nombre.trim() || !form.subTipo || !form.marca || !form.serie.trim() || !form.ubicacion.trim()) {
-      setErrorModal('Complete los campos obligatorios: número de bien, nombre, subtipo, marca, serie y ubicación.');
+    if (!form.codigoInventario.trim() || !form.nombre.trim() || !form.tipoEquipo || !form.subTipo || !form.marca || !form.serie.trim() || !form.ubicacion.trim()) {
+      setErrorModal('Complete los campos obligatorios: número de bien, nombre, tipo de equipo, subtipo, marca, serie y ubicación.');
       return;
     }
     setGuardando(true);
@@ -122,7 +155,7 @@ export default function Equipos() {
       <div className="card mb-3">
         <div className="card-body py-3">
           <div className="row g-2 align-items-end">
-            <div className="col-12 col-md-6">
+            <div className="col-12 col-lg-4">
               <label className="form-label">Buscar</label>
               <div className="input-group">
                 <span className="input-group-text"><i className="bi bi-search" /></span>
@@ -130,14 +163,29 @@ export default function Equipos() {
                   value={busqueda} onChange={(e) => setBusqueda(e.target.value)} />
               </div>
             </div>
-            <div className="col-6 col-md-3">
+            <div className="col-6 col-lg-2">
+              <label className="form-label">Tipo de equipo</label>
+              <select className="form-select" value={fTipo}
+                onChange={(e) => { setFTipo(e.target.value); setFSubtipo(''); }}>
+                <option value="">Todos</option>
+                {tiposEquipo.map((t) => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+            <div className="col-6 col-lg-2">
+              <label className="form-label">Subtipo</label>
+              <select className="form-select" value={fSubtipo} onChange={(e) => setFSubtipo(e.target.value)}>
+                <option value="">Todos</option>
+                {subtiposFiltro.map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+            <div className="col-6 col-lg-2">
               <label className="form-label">Ubicación</label>
               <select className="form-select" value={fUbicacion} onChange={(e) => setFUbicacion(e.target.value)}>
                 <option value="">Todas</option>
                 {ubicaciones.map((u) => <option key={u} value={u}>{u}</option>)}
               </select>
             </div>
-            <div className="col-6 col-md-3">
+            <div className="col-6 col-lg-2">
               <label className="form-label">Estado</label>
               <select className="form-select" value={fEstado} onChange={(e) => setFEstado(e.target.value)}>
                 <option value="">Todos</option>
@@ -145,6 +193,13 @@ export default function Equipos() {
               </select>
             </div>
           </div>
+          {hayFiltros && (
+            <div className="mt-2 text-end">
+              <button className="btn btn-sm btn-outline-secondary" onClick={limpiarFiltros}>
+                <i className="bi bi-x-circle me-1" />Limpiar filtros
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -234,23 +289,36 @@ export default function Equipos() {
                     <input className="form-control" value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })} />
                   </div>
                   <div className="col-6">
-                    <label className="form-label">Tipo de equipo</label>
-                    <select className="form-select" value={form.tipoEquipo} onChange={(e) => setForm({ ...form, tipoEquipo: e.target.value })}>
-                      {TIPOS_EQUIPO.map((t) => <option key={t} value={t}>{t}</option>)}
+                    <label className="form-label">Tipo de equipo <span className="text-danger">*</span></label>
+                    <select className="form-select" value={form.tipoEquipo}
+                      onChange={(e) => setForm({ ...form, tipoEquipo: e.target.value, subTipo: '' })}>
+                      <option value="">Seleccione…</option>
+                      {tiposEquipo.map((t) => <option key={t} value={t}>{t}</option>)}
+                      {form.tipoEquipo && !tiposEquipo.includes(form.tipoEquipo) && (
+                        <option value={form.tipoEquipo}>{form.tipoEquipo}</option>
+                      )}
                     </select>
                   </div>
                   <div className="col-6">
                     <label className="form-label">Subtipo <span className="text-danger">*</span></label>
-                    <select className="form-select" value={form.subTipo} onChange={(e) => setForm({ ...form, subTipo: e.target.value })}>
-                      <option value="">Seleccione…</option>
-                      {SUBTIPOS.map((s) => <option key={s} value={s}>{s}</option>)}
+                    <select className="form-select" value={form.subTipo}
+                      disabled={!form.tipoEquipo}
+                      onChange={(e) => setForm({ ...form, subTipo: e.target.value })}>
+                      <option value="">{form.tipoEquipo ? 'Seleccione…' : 'Elija primero el tipo de equipo'}</option>
+                      {subtiposDisponibles.map((s) => <option key={s} value={s}>{s}</option>)}
+                      {form.subTipo && !subtiposDisponibles.includes(form.subTipo) && (
+                        <option value={form.subTipo}>{form.subTipo}</option>
+                      )}
                     </select>
                   </div>
                   <div className="col-6">
                     <label className="form-label">Marca <span className="text-danger">*</span></label>
                     <select className="form-select" value={form.marca} onChange={(e) => setForm({ ...form, marca: e.target.value })}>
                       <option value="">Seleccione…</option>
-                      {MARCAS.map((m) => <option key={m} value={m}>{m}</option>)}
+                      {marcas.map((m) => <option key={m} value={m}>{m}</option>)}
+                      {form.marca && !marcas.includes(form.marca) && (
+                        <option value={form.marca}>{form.marca}</option>
+                      )}
                     </select>
                   </div>
                   <div className="col-6">

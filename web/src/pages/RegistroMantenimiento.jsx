@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { equiposApi, empresasApi, mantenimientosApi } from '../api/services';
+import { equiposApi, mantenimientosApi } from '../api/services';
 import { mensajeError } from '../api/client';
 import {
   TIPOS_MANTENIMIENTO, PERIODOS, ESTADOS_RESULTANTE, TIPO_MANT_LABEL, hoyISO,
@@ -10,15 +10,16 @@ import EstadoBadge from '../components/EstadoBadge';
 
 // Registro de mantenimiento (RF03/RF04/RF05). El validador de MongoDB exige
 // equipo, empresa, periodo, tipo, descripción, estado resultante, fecha y horas.
+// La empresa NO se elige en el formulario: el backend la deriva del usuario
+// autenticado (técnico → su empresa afiliada; supervisor/admin → Interno IGSS).
 const VACIO = {
   equipoId: '', tipoTrabajo: '', periodo: '', fecha: hoyISO(), horaInicio: '', horaFin: '',
-  empresaId: '', descripcion: '', repuestos: '', estadoFinal: 'funcionando',
+  descripcion: '', repuestos: '', estadoFinal: 'funcionando',
 };
 
 export default function RegistroMantenimiento() {
   const { usuario } = useAuth();
   const [equipos, setEquipos] = useState([]);
-  const [empresas, setEmpresas] = useState([]);
   const [form, setForm] = useState(VACIO);
   const [tocado, setTocado] = useState(false);
   const [guardado, setGuardado] = useState(false);
@@ -30,7 +31,6 @@ export default function RegistroMantenimiento() {
 
   useEffect(() => {
     equiposApi.listar().then(setEquipos).catch(() => {});
-    empresasApi.listar(true).then(setEmpresas).catch(() => {});
   }, []);
 
   const equipoSel = equipos.find((e) => e._id === form.equipoId);
@@ -53,14 +53,13 @@ export default function RegistroMantenimiento() {
 
   const faltan = {
     equipoId: tocado && !form.equipoId,
-    empresaId: tocado && !form.empresaId,
     tipoTrabajo: tocado && !form.tipoTrabajo,
     periodo: tocado && !form.periodo,
     horaInicio: tocado && !form.horaInicio,
     horaFin: tocado && !form.horaFin,
     descripcion: tocado && !form.descripcion.trim(),
   };
-  const incompleto = !form.equipoId || !form.empresaId || !form.tipoTrabajo
+  const incompleto = !form.equipoId || !form.tipoTrabajo
     || !form.periodo || !form.horaInicio || !form.horaFin || !form.descripcion.trim();
 
   const set = (k, v) => { setForm({ ...form, [k]: v }); setGuardado(false); };
@@ -73,7 +72,6 @@ export default function RegistroMantenimiento() {
     try {
       await mantenimientosApi.crear({
         equipo: form.equipoId,
-        empresa: form.empresaId,
         periodo: form.periodo,
         tipoTrabajo: form.tipoTrabajo,
         descripcionTrabajo: form.descripcion.trim(),
@@ -172,12 +170,18 @@ export default function RegistroMantenimiento() {
               </div>
 
               <div className="mb-3">
-                <label className="form-label">Empresa / proveedor <span className="text-danger">*</span></label>
-                <select className={`form-select ${faltan.empresaId ? 'is-invalid' : ''}`} value={form.empresaId} onChange={(e) => set('empresaId', e.target.value)}>
-                  <option value="">Seleccione…</option>
-                  {empresas.map((em) => <option key={em._id} value={em._id}>{em.nombre}</option>)}
-                </select>
-                {faltan.empresaId && <div className="invalid-feedback">Seleccione la empresa o proveedor (use «Interno IGSS» si es interno).</div>}
+                <label className="form-label">Empresa afiliada <span className="texto-auxiliar">(automático)</span></label>
+                <input
+                  type="text"
+                  className="form-control"
+                  value={usuario?.empresa?.nombre || '— sin empresa afiliada —'}
+                  readOnly
+                />
+                <div className="form-text">
+                  {usuario?.empresa?.nombre
+                    ? 'Se asigna automáticamente según su usuario. No es posible registrar el mantenimiento a nombre de otra empresa.'
+                    : 'Su usuario no tiene una empresa afiliada. Solicite al administrador que la asigne antes de registrar.'}
+                </div>
               </div>
 
               <div className="mb-1">
