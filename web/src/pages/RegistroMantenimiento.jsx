@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { equiposApi, mantenimientosApi } from '../api/services';
+import { equiposApi, mantenimientosApi, catalogosApi } from '../api/services';
 import { mensajeError } from '../api/client';
 import {
   TIPOS_MANTENIMIENTO, PERIODOS, ESTADOS_RESULTANTE, TIPO_MANT_LABEL, hoyISO,
-  ordenarEquipos, etiquetaEquipo,
+  ESTADOS_EQUIPO,
 } from '../data/constants';
 import EstadoBadge from '../components/EstadoBadge';
 
@@ -12,6 +12,7 @@ import EstadoBadge from '../components/EstadoBadge';
 // equipo, empresa, periodo, tipo, descripción, estado resultante, fecha y horas.
 // La empresa NO se elige en el formulario: el backend la deriva del usuario
 // autenticado (técnico → su empresa afiliada; supervisor/admin → Interno IGSS).
+// El equipo se localiza con un buscador de filtros (server-side, endpoint /equipos).
 const VACIO = {
   equipoId: '', tipoTrabajo: '', periodo: '', fecha: hoyISO(), horaInicio: '', horaFin: '',
   descripcion: '', repuestos: '', estadoFinal: 'funcionando',
@@ -19,8 +20,8 @@ const VACIO = {
 
 export default function RegistroMantenimiento() {
   const { usuario } = useAuth();
-  const [equipos, setEquipos] = useState([]);
   const [form, setForm] = useState(VACIO);
+  const [equipoSel, setEquipoSel] = useState(null); // objeto completo del equipo elegido
   const [tocado, setTocado] = useState(false);
   const [guardado, setGuardado] = useState(false);
   const [guardando, setGuardando] = useState(false);
@@ -29,12 +30,66 @@ export default function RegistroMantenimiento() {
   const [historial, setHistorial] = useState([]);
   const [duplicado, setDuplicado] = useState(null);
 
+  // --- Selector de equipo (modal con filtros) ---
+  const [picker, setPicker] = useState(false);
+  const [fBuscar, setFBuscar] = useState('');
+  const [fTipo, setFTipo] = useState('');
+  const [fSubtipo, setFSubtipo] = useState('');
+  const [fMarca, setFMarca] = useState('');
+  const [fUbic, setFUbic] = useState('');
+  const [fEstado, setFEstado] = useState('');
+  const [resultados, setResultados] = useState([]);
+  const [buscando, setBuscando] = useState(false);
+  const [tiposEquipo, setTiposEquipo] = useState([]);
+  const [subtipos, setSubtipos] = useState([]); // {valor, padre}
+  const [marcas, setMarcas] = useState([]);
+  const [ubicaciones, setUbicaciones] = useState([]);
+
+  // Catálogos para los desplegables de filtro (una sola vez).
   useEffect(() => {
-    equiposApi.listar().then(setEquipos).catch(() => {});
+    catalogosApi.listar('tipoEquipo').then((d) => setTiposEquipo((d || []).map((x) => x.valor))).catch(() => {});
+    catalogosApi.listar('subTipo').then((d) => setSubtipos((d || []).map((x) => ({ valor: x.valor, padre: x.padre })))).catch(() => {});
+    catalogosApi.listar('marca').then((d) => setMarcas((d || []).map((x) => x.valor))).catch(() => {});
+    catalogosApi.listar('ubicacion').then((d) => setUbicaciones((d || []).map((x) => x.valor))).catch(() => {});
   }, []);
 
-  const equipoSel = equipos.find((e) => e._id === form.equipoId);
+  const subtiposDisponibles = subtipos
+    .filter((s) => !fTipo || s.padre === fTipo)
+    .map((s) => s.valor);
 
+  // Consulta al backend (server-side) cuando el picker está abierto y cambian los filtros.
+  useEffect(() => {
+    if (!picker) return;
+    setBuscando(true);
+    const t = setTimeout(() => {
+      const params = {};
+      if (fBuscar.trim()) params.buscar = fBuscar.trim();
+      if (fTipo) params.tipoEquipo = fTipo;
+      if (fSubtipo) params.subTipo = fSubtipo;
+      if (fMarca) params.marca = fMarca;
+      if (fUbic) params.ubicacion = fUbic;
+      if (fEstado) params.estado = fEstado;
+      equiposApi.listar(params)
+        .then((data) => setResultados(data || []))
+        .catch(() => setResultados([]))
+        .finally(() => setBuscando(false));
+    }, 300);
+    return () => clearTimeout(t);
+  }, [picker, fBuscar, fTipo, fSubtipo, fMarca, fUbic, fEstado]);
+
+  const limpiarFiltros = () => {
+    setFBuscar(''); setFTipo(''); setFSubtipo(''); setFMarca(''); setFUbic(''); setFEstado('');
+  };
+  const hayFiltros = fBuscar || fTipo || fSubtipo || fMarca || fUbic || fEstado;
+
+  const seleccionarEquipo = (eq) => {
+    setEquipoSel(eq);
+    setForm((f) => ({ ...f, equipoId: eq._id }));
+    setGuardado(false);
+    setPicker(false);
+  };
+
+  // Verificación de posible duplicado (RF05).
   useEffect(() => {
     setDuplicado(null);
     if (!form.equipoId || !form.fecha) return;
@@ -46,6 +101,7 @@ export default function RegistroMantenimiento() {
     return () => clearTimeout(t);
   }, [form.equipoId, form.fecha]);
 
+  // Historial del equipo seleccionado (RF06).
   useEffect(() => {
     if (!form.equipoId) { setHistorial([]); return; }
     mantenimientosApi.listar({ equipo: form.equipoId }).then(setHistorial).catch(() => {});
@@ -100,6 +156,7 @@ export default function RegistroMantenimiento() {
 
   const limpiar = (conservarMsg) => {
     setForm(VACIO);
+    setEquipoSel(null);
     setTocado(false);
     setDuplicado(null);
     if (!conservarMsg) setGuardado(false);
@@ -108,7 +165,7 @@ export default function RegistroMantenimiento() {
   return (
     <>
       <h1 className="titulo-pantalla mb-1">Registro de mantenimiento</h1>
-      <p className="texto-auxiliar mb-3">Registre una intervención seleccionando el equipo desde el catálogo. La fecha y el técnico se asignan automáticamente.</p>
+      <p className="texto-auxiliar mb-3">Registre una intervención localizando el equipo con el buscador de filtros. La fecha y el técnico se asignan automáticamente.</p>
 
       {guardado && (
         <div className="alert alert-success d-flex align-items-center" role="alert">
@@ -124,29 +181,40 @@ export default function RegistroMantenimiento() {
           <div className="row g-4">
             {/* Columna izquierda */}
             <div className="col-12 col-lg-6">
+              {/* Selector de equipo */}
               <div className="mb-3">
                 <label className="form-label">Equipo intervenido <span className="text-danger">*</span></label>
-                <input
-                  list="lista-equipos"
-                  className={`form-control ${faltan.equipoId ? 'is-invalid' : ''}`}
-                  placeholder="Busque por número de bien o nombre…"
-                  value={equipoSel ? etiquetaEquipo(equipoSel) : ''}
-                  onChange={(e) => {
-                    const eq = equipos.find((x) => etiquetaEquipo(x) === e.target.value);
-                    set('equipoId', eq ? eq._id : '');
-                  }}
-                />
-                <datalist id="lista-equipos">
-                  {ordenarEquipos(equipos).map((e) => <option key={e._id} value={etiquetaEquipo(e)} />)}
-                </datalist>
-                {faltan.equipoId && <div className="invalid-feedback">Seleccione un equipo del catálogo.</div>}
-                {equipoSel && (
-                  <div className="d-flex align-items-center gap-2 mt-2 texto-auxiliar">
-                    <EstadoBadge estado={equipoSel.estado} />
-                    <span>· {equipoSel.subTipo} · {equipoSel.ubicacion}</span>
-                    <button className="btn btn-link btn-sm p-0 ms-auto" onClick={() => setVerHistorial(!verHistorial)}>
-                      <i className="bi bi-clock-history me-1" />{verHistorial ? 'Ocultar' : 'Ver'} historial ({historial.length})
+                {!equipoSel ? (
+                  <div>
+                    <button
+                      type="button"
+                      className={`btn btn-outline-primary w-100 ${faltan.equipoId ? 'border-danger text-danger' : ''}`}
+                      onClick={() => setPicker(true)}>
+                      <i className="bi bi-search me-2" />Buscar y seleccionar equipo…
                     </button>
+                    {faltan.equipoId && <div className="text-danger mt-1" style={{ fontSize: '.85rem' }}>Seleccione un equipo del catálogo.</div>}
+                  </div>
+                ) : (
+                  <div className="border rounded p-2">
+                    <div className="d-flex justify-content-between align-items-start">
+                      <div>
+                        <div className="fw-semibold">{equipoSel.codigoInventario} — {equipoSel.nombre}</div>
+                        <div className="texto-auxiliar" style={{ fontSize: '13px' }}>
+                          Serie: {equipoSel.serie || 'S/S'} · {equipoSel.tipoEquipo} / {equipoSel.subTipo} · {equipoSel.marca}
+                        </div>
+                        <div className="texto-auxiliar" style={{ fontSize: '13px' }}>
+                          <i className="bi bi-geo-alt me-1" />{equipoSel.ubicacion} · <EstadoBadge estado={equipoSel.estado} />
+                        </div>
+                      </div>
+                      <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => setPicker(true)}>
+                        <i className="bi bi-arrow-repeat me-1" />Cambiar
+                      </button>
+                    </div>
+                    <div className="mt-2">
+                      <button className="btn btn-link btn-sm p-0" onClick={() => setVerHistorial(!verHistorial)}>
+                        <i className="bi bi-clock-history me-1" />{verHistorial ? 'Ocultar' : 'Ver'} historial ({historial.length})
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>
@@ -279,13 +347,124 @@ export default function RegistroMantenimiento() {
         </div>
       </div>
 
-      {/* Zona 4: zona de acciones */}
+      {/* Zona de acciones */}
       <div className="action-zone">
         <button className="btn btn-outline-secondary" onClick={() => limpiar(false)} disabled={guardando}><i className="bi bi-x-lg me-1" />Cancelar</button>
         <button className="btn btn-primary" onClick={() => enviar(false)} disabled={guardando}>
           {guardando ? <><span className="spinner-border spinner-border-sm me-2" />Guardando…</> : <><i className="bi bi-save me-1" />Guardar</>}
         </button>
       </div>
+
+      {/* Modal: buscador de equipos con filtros (server-side) */}
+      {picker && (
+        <div className="modal-overlay" onClick={() => setPicker(false)}>
+          <div className="modal-panel" style={{ maxWidth: 900, width: '96%' }} onClick={(e) => e.stopPropagation()}>
+            <div className="card">
+              <div className="card-header py-2 titulo-seccion d-flex justify-content-between align-items-center">
+                <span><i className="bi bi-search me-1" />Localizar equipo</span>
+                <button className="btn btn-sm btn-link text-secondary p-0" onClick={() => setPicker(false)}><i className="bi bi-x-lg" /></button>
+              </div>
+              <div className="card-body">
+                {/* Filtros */}
+                <div className="row g-2 align-items-end mb-2">
+                  <div className="col-12 col-md-4">
+                    <label className="form-label">Buscar</label>
+                    <div className="input-group input-group-sm">
+                      <span className="input-group-text"><i className="bi bi-search" /></span>
+                      <input className="form-control" placeholder="N.º de bien, nombre o serie…"
+                        autoFocus value={fBuscar} onChange={(e) => setFBuscar(e.target.value)} />
+                    </div>
+                  </div>
+                  <div className="col-6 col-md-2">
+                    <label className="form-label">Tipo</label>
+                    <select className="form-select form-select-sm" value={fTipo}
+                      onChange={(e) => { setFTipo(e.target.value); setFSubtipo(''); }}>
+                      <option value="">Todos</option>
+                      {tiposEquipo.map((t) => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                  </div>
+                  <div className="col-6 col-md-2">
+                    <label className="form-label">Subtipo</label>
+                    <select className="form-select form-select-sm" value={fSubtipo} disabled={!fTipo}
+                      onChange={(e) => setFSubtipo(e.target.value)}>
+                      <option value="">Todos</option>
+                      {subtiposDisponibles.map((s) => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  </div>
+                  <div className="col-6 col-md-2">
+                    <label className="form-label">Marca</label>
+                    <select className="form-select form-select-sm" value={fMarca} onChange={(e) => setFMarca(e.target.value)}>
+                      <option value="">Todas</option>
+                      {marcas.map((m) => <option key={m} value={m}>{m}</option>)}
+                    </select>
+                  </div>
+                  <div className="col-6 col-md-2">
+                    <label className="form-label">Estado</label>
+                    <select className="form-select form-select-sm" value={fEstado} onChange={(e) => setFEstado(e.target.value)}>
+                      <option value="">Todos</option>
+                      {ESTADOS_EQUIPO.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+                    </select>
+                  </div>
+                  <div className="col-12 col-md-4">
+                    <label className="form-label">Servicio / ubicación</label>
+                    <select className="form-select form-select-sm" value={fUbic} onChange={(e) => setFUbic(e.target.value)}>
+                      <option value="">Todas</option>
+                      {ubicaciones.map((u) => <option key={u} value={u}>{u}</option>)}
+                    </select>
+                  </div>
+                  <div className="col-12 col-md-8 text-end">
+                    {hayFiltros && (
+                      <button className="btn btn-sm btn-outline-secondary" onClick={limpiarFiltros}>
+                        <i className="bi bi-x-circle me-1" />Limpiar filtros
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Resultados */}
+                <div className="table-responsive" style={{ maxHeight: '46vh', overflowY: 'auto' }}>
+                  <table className="table table-sm table-hover align-middle mb-0">
+                    <thead className="table-light" style={{ position: 'sticky', top: 0 }}>
+                      <tr>
+                        <th>N.º de bien</th><th>Nombre</th><th>Serie</th><th>Subtipo</th><th>Marca</th><th>Ubicación</th><th>Estado</th><th></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {buscando && (
+                        <tr><td colSpan={8} className="text-center py-3"><span className="spinner-border spinner-border-sm me-2" />Buscando…</td></tr>
+                      )}
+                      {!buscando && resultados.length === 0 && (
+                        <tr><td colSpan={8} className="text-center texto-auxiliar py-3">No se encontraron equipos con los filtros aplicados.</td></tr>
+                      )}
+                      {!buscando && resultados.map((e) => (
+                        <tr key={e._id}>
+                          <td className="fw-semibold">{e.codigoInventario}</td>
+                          <td style={{ maxWidth: 220 }} className="text-truncate" title={e.nombre}>{e.nombre}</td>
+                          <td>{e.serie || 'S/S'}</td>
+                          <td>{e.subTipo}</td>
+                          <td>{e.marca}</td>
+                          <td>{e.ubicacion}</td>
+                          <td><EstadoBadge estado={e.estado} /></td>
+                          <td className="text-end">
+                            <button className="btn btn-sm btn-primary" onClick={() => seleccionarEquipo(e)}>
+                              <i className="bi bi-check2 me-1" />Seleccionar
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {!buscando && (
+                  <div className="texto-auxiliar mt-2" style={{ fontSize: '13px' }}>
+                    {resultados.length} equipo(s) encontrado(s). Combine filtros para acotar la búsqueda.
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

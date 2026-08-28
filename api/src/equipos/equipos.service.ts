@@ -33,19 +33,23 @@ export class EquiposService {
     buscar?: string;
     tipoEquipo?: string;
     subTipo?: string;
+    marca?: string;
     estado?: string;
     ubicacion?: string;
   }): Promise<Equipo[]> {
     const filtro: any = {};
     if (params.tipoEquipo) filtro.tipoEquipo = params.tipoEquipo;
     if (params.subTipo) filtro.subTipo = params.subTipo;
+    if (params.marca) filtro.marca = params.marca;
     if (params.estado) filtro.estado = params.estado;
     if (params.ubicacion) filtro.ubicacion = params.ubicacion;
     if (params.buscar) {
       const rx = new RegExp(this.escapar(params.buscar.trim()), 'i');
+      // Busqueda general: numero de bien, nombre, numero de serie y ubicacion.
       filtro.$or = [
         { codigoInventario: rx },
         { nombre: rx },
+        { serie: rx },
         { ubicacion: rx },
       ];
     }

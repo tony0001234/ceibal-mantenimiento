@@ -88,9 +88,6 @@ export default function Login() {
           </form>
           <div className="text-center mt-3 texto-auxiliar">
             <div>Acceso restringido al personal autorizado</div>
-            <div className="mt-1">
-              <strong>Usuarios de prueba (tras el seed):</strong> amorales@igssceibal.gob.gt / admin123&nbsp;·&nbsp;rlopez@igssceibal.gob.gt / super123&nbsp;·&nbsp;pgarcia@igssceibal.gob.gt / tecnico123
-            </div>
           </div>
         </div>
       </div>

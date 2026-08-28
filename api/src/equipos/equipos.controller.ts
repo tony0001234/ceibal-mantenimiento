@@ -36,10 +36,11 @@ export class EquiposController {
     @Query('buscar') buscar?: string,
     @Query('tipoEquipo') tipoEquipo?: string,
     @Query('subTipo') subTipo?: string,
+    @Query('marca') marca?: string,
     @Query('estado') estado?: string,
     @Query('ubicacion') ubicacion?: string,
   ) {
-    return this.equiposService.findAll({ buscar, tipoEquipo, subTipo, estado, ubicacion });
+    return this.equiposService.findAll({ buscar, tipoEquipo, subTipo, marca, estado, ubicacion });
   }
 
   @Get(':id')
