@@ -14,9 +14,16 @@ describe('AppController', () => {
     appController = app.get<AppController>(AppController);
   });
 
-  describe('root', () => {
-    it('should return "Hello World!"', () => {
-      expect(appController.getHello()).toBe('Hello World!');
-    });
+  it('should be defined', () => {
+    expect(appController).toBeDefined();
+  });
+
+  // El endpoint de salud reporta el servicio activo (reemplaza al antiguo
+  // "Hello World" del scaffolding de NestJS).
+  it('estado() reporta el servicio activo y la ruta de documentacion', () => {
+    const r = appController.estado();
+    expect(r.estado).toBe('activo');
+    expect(r.documentacion).toBe('/docs');
+    expect(typeof r.hora).toBe('string');
   });
 });

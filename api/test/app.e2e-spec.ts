@@ -1,29 +1,32 @@
-import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
-import request from 'supertest';
-import { App } from 'supertest/types';
-import { AppModule } from './../src/app.module';
+import { Test } from '@nestjs/testing';
+import request = require('supertest');
+import { AppController } from '../src/app.controller';
+import { AppService } from '../src/app.service';
 
-describe('AppController (e2e)', () => {
-  let app: INestApplication<App>;
+// Smoke e2e del endpoint de salud. Es independiente de la base de datos, por lo
+// que se prueba con un modulo minimo (AppController + AppService) y NO requiere
+// MongoDB en memoria. Reemplaza al scaffolding que esperaba "Hello World!".
+describe('AppController (e2e) — salud', () => {
+  let app: INestApplication;
 
-  beforeEach(async () => {
-    const moduleFixture: TestingModule = await Test.createTestingModule({
-      imports: [AppModule],
+  beforeAll(async () => {
+    const moduleRef = await Test.createTestingModule({
+      controllers: [AppController],
+      providers: [AppService],
     }).compile();
-
-    app = moduleFixture.createNestApplication();
+    app = moduleRef.createNestApplication();
     await app.init();
   });
 
-  it('/ (GET)', () => {
-    return request(app.getHttpServer())
-      .get('/')
-      .expect(200)
-      .expect('Hello World!');
+  afterAll(async () => {
+    if (app) await app.close();
   });
 
-  afterEach(async () => {
-    await app.close();
+  it('/ (GET) responde 200 con el estado del servicio', async () => {
+    const res = await request(app.getHttpServer()).get('/').expect(200);
+    expect(res.body.estado).toBe('activo');
+    expect(res.body.documentacion).toBe('/docs');
+    expect(typeof res.body.hora).toBe('string');
   });
 });

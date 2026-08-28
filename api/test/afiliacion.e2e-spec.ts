@@ -9,22 +9,48 @@
  */
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import { getConnectionToken } from '@nestjs/mongoose';
+import { Connection } from 'mongoose';
 import request = require('supertest');
 import * as bcrypt from 'bcryptjs';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import mongoose from 'mongoose';
 
-let mongod: MongoMemoryServer;
+// La API devuelve `empresa` POBLADA ({ _id, nombre }) en el registro de
+// mantenimiento (populate con select 'nombre'). Este helper extrae el id tanto
+// si viene poblada como si viniera un ObjectId crudo, para comparar por id.
+const empresaId = (v: any): string =>
+  v && typeof v === 'object' ? String(v._id ?? v) : String(v);
+
+let mongod: MongoMemoryServer | undefined;
 
 beforeAll(async () => {
-  mongod = await MongoMemoryServer.create();
-  process.env.MONGODB_URI = mongod.getUri('ceibal_test');
+  // Escape hatch: si no se puede descargar el binario de Mongo en memoria
+  // (proxy/antivirus/offline o una version sin build para la plataforma),
+  // se puede correr las e2e contra un Mongo real definiendo MONGODB_URI_TEST
+  // (p. ej. mongodb://localhost:27017/ceibal_test). Debe ser una base DESECHABLE.
+  const externalUri = process.env.MONGODB_URI_TEST;
+  if (externalUri) {
+    process.env.MONGODB_URI = externalUri;
+  } else {
+    try {
+      // Version fija con builds para Windows/macOS/Linux (reproducibilidad).
+      mongod = await MongoMemoryServer.create({ binary: { version: '7.0.14' } });
+    } catch (e) {
+      throw new Error(
+        'No se pudo iniciar MongoDB en memoria (mongodb-memory-server no descargo el binario). ' +
+          'Soluciones: (1) revisar conexion/proxy/antivirus; ' +
+          '(2) definir MONGOMS_SYSTEM_BINARY con la ruta a un mongod local instalado; ' +
+          '(3) definir MONGODB_URI_TEST con un Mongo real desechable. Detalle: ' +
+          (e as Error).message,
+      );
+    }
+    process.env.MONGODB_URI = mongod.getUri('ceibal_test');
+  }
   process.env.JWT_SECRET = 'test-secret';
   process.env.JWT_EXPIRES = '8h';
-});
+}, 120000);
 
 afterAll(async () => {
-  await mongoose.disconnect();
   if (mongod) await mongod.stop();
 });
 
@@ -53,8 +79,25 @@ describe('Empresa afiliada + usuarios + catalogos (e2e)', () => {
     await app.init();
     http = app.getHttpServer();
 
+    // IMPORTANTE: usar la conexion que administra NestJS (@nestjs/mongoose crea
+    // su propia conexion; la global `mongoose.connection` estaria desconectada y
+    // las escrituras directas darian "buffering timed out").
+    const conn: Connection = app.get(getConnectionToken());
+
+    // Aislamiento: parte de una base limpia. Salvaguarda: nunca limpiar una base
+    // que parezca de produccion (evita accidentes si MONGODB_URI_TEST apunta mal).
+    const dbName = conn.name || '';
+    if (/prod/i.test(dbName) || dbName === 'Ceibal-Mantenimiento') {
+      throw new Error(
+        `Las e2e se negaron a limpiar la base "${dbName}" por parecer de produccion. ` +
+          'Usa una base desechable (p. ej. ceibal_test) en MONGODB_URI_TEST.',
+      );
+    }
+    for (const c of ['usuario', 'empresa', 'equipo', 'mantenimiento', 'catalogo']) {
+      await conn.collection(c).deleteMany({});
+    }
+
     // --- Sembrar lo minimo directamente en la BD (empresas + admin) ---
-    const conn = mongoose.connection;
     const empresas = conn.collection('empresa');
     const usuarios = conn.collection('usuario');
 
@@ -88,7 +131,7 @@ describe('Empresa afiliada + usuarios + catalogos (e2e)', () => {
   });
 
   afterAll(async () => {
-    await app.close();
+    if (app) await app.close();
   });
 
   // El login del tecnico A debe traer su empresa afiliada (Empresa A).
@@ -152,7 +195,7 @@ describe('Empresa afiliada + usuarios + catalogos (e2e)', () => {
     const r = await request(http).post('/mantenimientos').set('Authorization', `Bearer ${tokenTecnicoA}`)
       .send({ equipo: equipoId, periodo: 'mensual', tipoTrabajo: 'preventivo', descripcionTrabajo: 'Limpieza general.', repuestosObservaciones: '', estadoEquipoResultante: 'funcionando', fechaMantenimiento: '2026-08-20', horaInicio: '08:00', horaFin: '09:00' })
       .expect(201);
-    expect(r.body.empresa.toString()).toBe(empresaA);
+    expect(empresaId(r.body.empresa)).toBe(empresaA);
   });
 
   // Escenario 2: el supervisor registra -> empresa = Interno IGSS (automatica).
@@ -160,7 +203,7 @@ describe('Empresa afiliada + usuarios + catalogos (e2e)', () => {
     const r = await request(http).post('/mantenimientos').set('Authorization', `Bearer ${tokenSupervisor}`)
       .send({ equipo: equipoId, periodo: 'mensual', tipoTrabajo: 'evaluacion_interna', descripcionTrabajo: 'Verificacion interna.', repuestosObservaciones: '', estadoEquipoResultante: 'funcionando', fechaMantenimiento: '2026-08-21', horaInicio: '10:00', horaFin: '10:30' })
       .expect(201);
-    expect(r.body.empresa.toString()).toBe(igss);
+    expect(empresaId(r.body.empresa)).toBe(igss);
   });
 
   // Escenario de seguridad: aunque el cliente envie empresa=Empresa B en el body,
@@ -169,8 +212,8 @@ describe('Empresa afiliada + usuarios + catalogos (e2e)', () => {
     const r = await request(http).post('/mantenimientos').set('Authorization', `Bearer ${tokenTecnicoA}`)
       .send({ equipo: equipoId, empresa: empresaB, periodo: 'mensual', tipoTrabajo: 'correctivo', descripcionTrabajo: 'Intento de suplantacion.', repuestosObservaciones: '', estadoEquipoResultante: 'funcionando', fechaMantenimiento: '2026-08-22', horaInicio: '11:00', horaFin: '11:30' })
       .expect(201);
-    expect(r.body.empresa.toString()).toBe(empresaA);
-    expect(r.body.empresa.toString()).not.toBe(empresaB);
+    expect(empresaId(r.body.empresa)).toBe(empresaA);
+    expect(empresaId(r.body.empresa)).not.toBe(empresaB);
   });
 
   // Escenario permisos: un tecnico NO puede crear catalogos ni usuarios.
