@@ -22,6 +22,8 @@ Resultado de pruebas_test 2.txt
 /postman
 mockData.js
 INFORME-CAMBIOS-UI-REGISTRO.md
+Fase-Pruebas-Documentacion-Resultados-Ceibal.docx
+INFORME-OPTIMIZACION-LIGHTHOUSE.md
 
 # compiled output
 /dist
@@ -90,3 +92,4 @@ dist
 .vite
 
 .env.example
+Fase-Pruebas-Documentacion-Resultados-Ceibal-v2-Lighthouse.docx

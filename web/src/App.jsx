@@ -1,13 +1,30 @@
+import { lazy, Suspense } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './context/AuthContext';
-import Layout from './components/Layout';
 import Login from './pages/Login';
-import Dashboard from './pages/Dashboard';
-import RegistroMantenimiento from './pages/RegistroMantenimiento';
-import Equipos from './pages/Equipos';
-import Historial from './pages/Historial';
-import Reportes from './pages/Reportes';
-import Administracion from './pages/Administracion';
+
+// Carga diferida (code-splitting): las vistas autenticadas se descargan solo
+// cuando se navega a ellas, de modo que la pantalla de login (primera carga)
+// no arrastra el código de todo el panel. El comportamiento no cambia; solo
+// se reparte el paquete JS en fragmentos más pequeños.
+const Layout = lazy(() => import('./components/Layout'));
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const RegistroMantenimiento = lazy(() => import('./pages/RegistroMantenimiento'));
+const Equipos = lazy(() => import('./pages/Equipos'));
+const Historial = lazy(() => import('./pages/Historial'));
+const Reportes = lazy(() => import('./pages/Reportes'));
+const Administracion = lazy(() => import('./pages/Administracion'));
+
+// Indicador mientras se descarga un fragmento de vista.
+function Cargador() {
+  return (
+    <div className="d-flex justify-content-center align-items-center" style={{ minHeight: '60vh' }}>
+      <div className="spinner-border text-primary" role="status">
+        <span className="visually-hidden">Cargando…</span>
+      </div>
+    </div>
+  );
+}
 
 // Restringe una ruta a ciertos roles (control de acceso real, RF01/RNF01).
 function Rol({ roles, children }) {
@@ -34,18 +51,20 @@ export default function App() {
   const CON_PANEL = ['administrador', 'supervisor', 'auditor'];
 
   return (
-    <Routes>
-      <Route path="/" element={<Login />} />
-      <Route path="/app" element={<Layout />}>
-        <Route index element={<Navigate to="/app/equipos" replace />} />
-        <Route path="panel" element={<Rol roles={CON_PANEL}><Dashboard /></Rol>} />
-        <Route path="registro" element={<Rol roles={['administrador', 'supervisor', 'tecnico']}><RegistroMantenimiento /></Rol>} />
-        <Route path="equipos" element={<Equipos />} />
-        <Route path="historial" element={<Historial />} />
-        <Route path="reportes" element={<Rol roles={CON_PANEL}><Reportes /></Rol>} />
-        <Route path="administracion" element={<Rol roles={['administrador']}><Administracion /></Rol>} />
-      </Route>
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+    <Suspense fallback={<Cargador />}>
+      <Routes>
+        <Route path="/" element={<Login />} />
+        <Route path="/app" element={<Layout />}>
+          <Route index element={<Navigate to="/app/equipos" replace />} />
+          <Route path="panel" element={<Rol roles={CON_PANEL}><Dashboard /></Rol>} />
+          <Route path="registro" element={<Rol roles={['administrador', 'supervisor', 'tecnico']}><RegistroMantenimiento /></Rol>} />
+          <Route path="equipos" element={<Equipos />} />
+          <Route path="historial" element={<Historial />} />
+          <Route path="reportes" element={<Rol roles={CON_PANEL}><Reportes /></Rol>} />
+          <Route path="administracion" element={<Rol roles={['administrador']}><Administracion /></Rol>} />
+        </Route>
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </Suspense>
   );
 }

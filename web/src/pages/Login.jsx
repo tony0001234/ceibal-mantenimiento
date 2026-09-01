@@ -35,7 +35,7 @@ export default function Login() {
   const faltaClave = tocado && !form.clave;
 
   return (
-    <div className="login-wrap">
+    <main className="login-wrap">
       <div className="login-card">
         <div className="login-head">
           <div className="login-logo"><i className="bi bi-stack" /></div>
@@ -72,8 +72,16 @@ export default function Login() {
                   autoComplete="current-password"
                   onChange={(e) => setForm({ ...form, clave: e.target.value })}
                 />
-                <button type="button" className="btn btn-outline-secondary" onClick={() => setVerClave(!verClave)} tabIndex={-1}>
-                  <i className={`bi ${verClave ? 'bi-eye-slash' : 'bi-eye'}`} />
+                <button
+                  type="button"
+                  className="btn btn-outline-secondary"
+                  onClick={() => setVerClave(!verClave)}
+                  tabIndex={-1}
+                  aria-label={verClave ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                  aria-pressed={verClave}
+                  title={verClave ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                >
+                  <i className={`bi ${verClave ? 'bi-eye-slash' : 'bi-eye'}`} aria-hidden="true" />
                 </button>
                 {faltaClave && <div className="invalid-feedback">Este campo es obligatorio.</div>}
               </div>
@@ -91,6 +99,6 @@ export default function Login() {
           </div>
         </div>
       </div>
-    </div>
+    </main>
   );
 }
