@@ -3,7 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { equiposApi, catalogosApi } from '../api/services';
 import { mensajeError } from '../api/client';
-import { ESTADOS, ESTADOS_EQUIPO, CRITICIDADES } from '../data/constants';
+import {
+  ESTADOS, ESTADOS_EQUIPO, CRITICIDADES,
+  CATEGORIAS_MANTENIMIENTO, CATEGORIA_CORTA,
+} from '../data/constants';
 import EstadoBadge from '../components/EstadoBadge';
 
 // Modulo de equipos (RF02). tipoEquipo, subTipo y marca provienen de los
@@ -13,6 +16,7 @@ const POR_PAGINA = 8;
 const VACIO = {
   codigoInventario: '', nombre: '', tipoEquipo: '', subTipo: '',
   marca: '', serie: '', ubicacion: '', estado: 'ACTIVO', criticidad: 'MEDIA',
+  categoria: '',
 };
 
 export default function Equipos() {
@@ -28,6 +32,7 @@ export default function Equipos() {
   const [fUbicacion, setFUbicacion] = useState('');
   const [fTipo, setFTipo] = useState('');
   const [fSubtipo, setFSubtipo] = useState('');
+  const [fCategoria, setFCategoria] = useState('');
   const [pagina, setPagina] = useState(1);
   const [ubicaciones, setUbicaciones] = useState([]);
   const [tiposEquipo, setTiposEquipo] = useState([]);
@@ -49,6 +54,7 @@ export default function Equipos() {
       if (fSubtipo) params.subTipo = fSubtipo;
       if (fEstado) params.estado = fEstado;
       if (fUbicacion) params.ubicacion = fUbicacion;
+      if (fCategoria) params.categoria = fCategoria;
       const data = await equiposApi.listar(params);
       setEquipos(data);
       setPagina(1);
@@ -57,7 +63,7 @@ export default function Equipos() {
     } finally {
       setCargando(false);
     }
-  }, [busqueda, fTipo, fSubtipo, fEstado, fUbicacion]);
+  }, [busqueda, fTipo, fSubtipo, fEstado, fUbicacion, fCategoria]);
 
   useEffect(() => {
     const t = setTimeout(cargar, 300);
@@ -90,9 +96,9 @@ export default function Equipos() {
     .map((s) => s.valor);
 
   const limpiarFiltros = () => {
-    setBusqueda(''); setFTipo(''); setFSubtipo(''); setFEstado(''); setFUbicacion('');
+    setBusqueda(''); setFTipo(''); setFSubtipo(''); setFEstado(''); setFUbicacion(''); setFCategoria('');
   };
-  const hayFiltros = busqueda || fTipo || fSubtipo || fEstado || fUbicacion;
+  const hayFiltros = busqueda || fTipo || fSubtipo || fEstado || fUbicacion || fCategoria;
 
   const totalPaginas = Math.max(1, Math.ceil(equipos.length / POR_PAGINA));
   const paginaActual = Math.min(pagina, totalPaginas);
@@ -104,6 +110,7 @@ export default function Equipos() {
       codigoInventario: e.codigoInventario, nombre: e.nombre, tipoEquipo: e.tipoEquipo || 'Refrigeración',
       subTipo: e.subTipo || '', marca: e.marca || '', serie: e.serie || '',
       ubicacion: e.ubicacion, estado: e.estado, criticidad: e.criticidad,
+      categoria: e.categoria || '',
     });
     setErrorModal('');
     setModal({ modo: 'editar', id: e._id });
@@ -192,6 +199,13 @@ export default function Equipos() {
                 {ESTADOS_EQUIPO.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
               </select>
             </div>
+            <div className="col-6 col-lg-3">
+              <label className="form-label">Periodicidad de mantenimiento</label>
+              <select className="form-select" value={fCategoria} onChange={(e) => setFCategoria(e.target.value)}>
+                <option value="">Todas</option>
+                {CATEGORIAS_MANTENIMIENTO.map((c) => <option key={c.valor} value={c.valor}>{c.label}</option>)}
+              </select>
+            </div>
           </div>
           {hayFiltros && (
             <div className="mt-2 text-end">
@@ -208,15 +222,15 @@ export default function Equipos() {
           <table className="table table-hover mb-0 align-middle">
             <thead>
               <tr>
-                <th>N.º de bien</th><th>Nombre</th><th>Subtipo</th><th>Marca</th><th>Ubicación</th><th>Estado</th><th className="text-end">Acciones</th>
+                <th>N.º de bien</th><th>Nombre</th><th>Subtipo</th><th>Marca</th><th>Ubicación</th><th>Periodicidad</th><th>Estado</th><th className="text-end">Acciones</th>
               </tr>
             </thead>
             <tbody>
               {cargando && (
-                <tr><td colSpan={7} className="text-center py-4"><span className="spinner-border spinner-border-sm me-2" />Cargando…</td></tr>
+                <tr><td colSpan={8} className="text-center py-4"><span className="spinner-border spinner-border-sm me-2" />Cargando…</td></tr>
               )}
               {!cargando && visibles.length === 0 && (
-                <tr><td colSpan={7} className="text-center texto-auxiliar py-4">No se encontraron equipos con los filtros aplicados.</td></tr>
+                <tr><td colSpan={8} className="text-center texto-auxiliar py-4">No se encontraron equipos con los filtros aplicados.</td></tr>
               )}
               {!cargando && visibles.map((e) => (
                 <tr key={e._id}>
@@ -225,6 +239,7 @@ export default function Equipos() {
                   <td>{e.subTipo}</td>
                   <td>{e.marca}</td>
                   <td>{e.ubicacion}</td>
+                  <td>{CATEGORIA_CORTA[e.categoria] || <span className="texto-auxiliar">—</span>}</td>
                   <td><EstadoBadge estado={e.estado} /></td>
                   <td className="text-end" style={{ whiteSpace: 'nowrap' }}>
                     <button className="btn btn-sm btn-outline-primary me-1" title="Ver historial" onClick={() => navigate('/app/historial', { state: { equipoId: e._id } })}>
@@ -335,6 +350,14 @@ export default function Equipos() {
                       )}
                     </select>
                     <div className="form-text">¿Falta una ubicación? Agréguela en <strong>Administración → Catálogos</strong>.</div>
+                  </div>
+                  <div className="col-6">
+                    <label className="form-label">Periodicidad de mantenimiento</label>
+                    <select className="form-select" value={form.categoria} onChange={(e) => setForm({ ...form, categoria: e.target.value })}>
+                      <option value="">Sin categoría</option>
+                      {CATEGORIAS_MANTENIMIENTO.map((c) => <option key={c.valor} value={c.valor}>{c.label}</option>)}
+                    </select>
+                    <div className="form-text">Determina el contrato y el costo de mantenimiento aplicable al equipo.</div>
                   </div>
                   <div className="col-3">
                     <label className="form-label">Criticidad</label>

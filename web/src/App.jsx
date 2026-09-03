@@ -13,6 +13,7 @@ const RegistroMantenimiento = lazy(() => import('./pages/RegistroMantenimiento')
 const Equipos = lazy(() => import('./pages/Equipos'));
 const Historial = lazy(() => import('./pages/Historial'));
 const Reportes = lazy(() => import('./pages/Reportes'));
+const Costos = lazy(() => import('./pages/Costos'));
 const Administracion = lazy(() => import('./pages/Administracion'));
 
 // Indicador mientras se descarga un fragmento de vista.
@@ -61,6 +62,7 @@ export default function App() {
           <Route path="equipos" element={<Equipos />} />
           <Route path="historial" element={<Historial />} />
           <Route path="reportes" element={<Rol roles={CON_PANEL}><Reportes /></Rol>} />
+          <Route path="costos" element={<Rol roles={['administrador']}><Costos /></Rol>} />
           <Route path="administracion" element={<Rol roles={['administrador']}><Administracion /></Rol>} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

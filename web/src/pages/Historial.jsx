@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import { equiposApi, mantenimientosApi } from '../api/services';
 import { mensajeError } from '../api/client';
-import { TIPO_MANT_LABEL, ordenarEquipos, etiquetaEquipo } from '../data/constants';
+import { TIPO_MANT_LABEL, ordenarEquipos, etiquetaEquipo, fmtQ } from '../data/constants';
 import EstadoBadge from '../components/EstadoBadge';
 
 // Consulta de historial por equipo (RF06). Ficha tecnica + intervenciones.
@@ -91,17 +91,18 @@ export default function Historial() {
           <div className="table-responsive">
             <table className="table table-hover mb-0">
               <thead>
-                <tr><th>Fecha</th><th>Tipo</th><th>Técnico</th><th>Descripción</th><th>Estado final</th></tr>
+                <tr><th>Fecha</th><th>Tipo</th><th>Técnico</th><th>Descripción</th><th className="text-end">Costo</th><th>Estado final</th></tr>
               </thead>
               <tbody>
-                {cargando && <tr><td colSpan={5} className="text-center py-4"><span className="spinner-border spinner-border-sm me-2" />Cargando…</td></tr>}
-                {!cargando && registros.length === 0 && <tr><td colSpan={5} className="text-center texto-auxiliar py-4">Este equipo no tiene mantenimientos registrados.</td></tr>}
+                {cargando && <tr><td colSpan={6} className="text-center py-4"><span className="spinner-border spinner-border-sm me-2" />Cargando…</td></tr>}
+                {!cargando && registros.length === 0 && <tr><td colSpan={6} className="text-center texto-auxiliar py-4">Este equipo no tiene mantenimientos registrados.</td></tr>}
                 {!cargando && registros.map((m) => (
                   <tr key={m._id}>
                     <td style={{ whiteSpace: 'nowrap' }}>{m.fechaMantenimiento?.slice(0, 10)}</td>
                     <td>{TIPO_MANT_LABEL[m.tipoTrabajo] || m.tipoTrabajo}</td>
                     <td>{m.tecnico?.nombre || '—'}</td>
                     <td style={{ fontSize: '13.5px', maxWidth: 340 }}>{m.descripcionTrabajo}</td>
+                    <td className="text-end" style={{ whiteSpace: 'nowrap' }}>{fmtQ(m.costoMantenimiento ?? 0)}</td>
                     <td><EstadoBadge estado={m.estadoEquipoResultante} /></td>
                   </tr>
                 ))}

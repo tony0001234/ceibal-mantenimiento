@@ -36,7 +36,9 @@ export default function Dashboard() {
     { label: 'Equipos registrados', value: data.equiposRegistrados, icon: 'bi-hdd-stack', color: 'var(--ceibal-azul-600)' },
     { label: 'Equipos fuera de servicio', value: data.equiposFuera, icon: 'bi-exclamation-octagon', color: 'var(--estado-fuera)' },
     { label: 'Mantenimientos del mes', value: data.mantenimientosMes, icon: 'bi-calendar-check', color: 'var(--estado-funcionando)' },
-    { label: 'Tiempo medio de reparación (MTTR)', value: `${data.mttrHoras} h`, icon: 'bi-stopwatch', color: 'var(--estado-mantenimiento)' },
+    { label: 'Tiempo medio de reparación (MTTR)', value: `${data.mttrMinutos ?? 0} min`, icon: 'bi-stopwatch', color: 'var(--estado-mantenimiento)' },
+    { label: 'Tiempo medio de mantenimiento preventivo', value: `${data.preventivoMinutos ?? 0} min`, icon: 'bi-clock-history', color: 'var(--ceibal-azul-600)' },
+    { label: 'Llamadas de emergencia del mes', value: data.emergenciasMes ?? 0, icon: 'bi-telephone-inbound', color: 'var(--estado-fuera)' },
   ];
   const maxDist = Math.max(1, ...data.distribucionTipo.map((d) => d.cantidad));
 
@@ -50,7 +52,7 @@ export default function Dashboard() {
 
       <div className="row g-3 mb-4">
         {kpis.map((k) => (
-          <div className="col-12 col-sm-6 col-xl-3" key={k.label}>
+          <div className="col-12 col-sm-6 col-lg-4" key={k.label}>
             <div className="card kpi-card h-100" style={{ borderLeftColor: k.color }}>
               <div className="card-body d-flex justify-content-between align-items-center">
                 <div>

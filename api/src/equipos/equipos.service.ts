@@ -36,6 +36,7 @@ export class EquiposService {
     marca?: string;
     estado?: string;
     ubicacion?: string;
+    categoria?: string;
   }): Promise<Equipo[]> {
     const filtro: any = {};
     if (params.tipoEquipo) filtro.tipoEquipo = params.tipoEquipo;
@@ -43,6 +44,8 @@ export class EquiposService {
     if (params.marca) filtro.marca = params.marca;
     if (params.estado) filtro.estado = params.estado;
     if (params.ubicacion) filtro.ubicacion = params.ubicacion;
+    // Filtro por categoría / periodicidad de mantenimiento.
+    if (params.categoria) filtro.categoria = params.categoria;
     if (params.buscar) {
       const rx = new RegExp(this.escapar(params.buscar.trim()), 'i');
       // Busqueda general: numero de bien, nombre, numero de serie y ubicacion.

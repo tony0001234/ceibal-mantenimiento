@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { equiposApi, reportesApi } from '../api/services';
 import { mensajeError } from '../api/client';
 import {
-  TIPOS_MANTENIMIENTO, TIPO_MANT_LABEL, hoyISO, ordenarEquipos, etiquetaEquipo,
+  TIPOS_MANTENIMIENTO, TIPO_MANT_LABEL, hoyISO, ordenarEquipos, etiquetaEquipo, fmtQ,
 } from '../data/constants';
 import EstadoBadge from '../components/EstadoBadge';
 
@@ -171,15 +171,15 @@ export default function Reportes() {
                 <div className="col-12"><strong style={{ fontSize: '14px' }}>Resumen del período</strong></div>
                 <div className="col-6 col-md-3"><div className="border rounded p-2 text-center"><div className="fw-bold fs-5">{data.resumen.total}</div><div className="texto-auxiliar">Mantenimientos</div></div></div>
                 <div className="col-6 col-md-3"><div className="border rounded p-2 text-center"><div className="fw-bold fs-5">{data.resumen.equiposAtendidos}</div><div className="texto-auxiliar">Equipos atendidos</div></div></div>
-                <div className="col-6 col-md-3"><div className="border rounded p-2 text-center"><div className="fw-bold fs-5">{data.resumen.fueraDeServicio ?? 0}</div><div className="texto-auxiliar">Fuera de servicio</div></div></div>
-                <div className="col-6 col-md-3"><div className="border rounded p-2 text-center"><div className="fw-bold fs-5">{data.resumen.mttrHoras ?? 0} h</div><div className="texto-auxiliar">MTTR</div></div></div>
+                <div className="col-6 col-md-3"><div className="border rounded p-2 text-center"><div className="fw-bold fs-5">{data.resumen.mttrMinutos ?? 0} min</div><div className="texto-auxiliar">MTTR</div></div></div>
+                <div className="col-6 col-md-3"><div className="border rounded p-2 text-center"><div className="fw-bold fs-5">{fmtQ(data.resumen.costoTotal ?? 0)}</div><div className="texto-auxiliar">Costo total</div></div></div>
               </div>
               <strong style={{ fontSize: '14px' }}>Detalle de mantenimientos</strong>
               <div className="table-responsive mt-1 mb-3">
                 <table className="table table-sm table-bordered">
-                  <thead><tr><th>Fecha</th><th>Equipo</th><th>Tipo</th><th>Técnico</th><th>Empresa</th><th>Estado final</th></tr></thead>
+                  <thead><tr><th>Fecha</th><th>Equipo</th><th>Tipo</th><th>Técnico</th><th>Empresa</th><th className="text-end">Costo</th><th>Estado final</th></tr></thead>
                   <tbody>
-                    {data.resultados.length === 0 && <tr><td colSpan={6} className="text-center texto-auxiliar">Sin registros en el período seleccionado.</td></tr>}
+                    {data.resultados.length === 0 && <tr><td colSpan={7} className="text-center texto-auxiliar">Sin registros en el período seleccionado.</td></tr>}
                     {data.resultados.map((m) => (
                       <tr key={m._id}>
                         <td>{m.fechaMantenimiento?.slice(0, 10)}</td>
@@ -187,6 +187,7 @@ export default function Reportes() {
                         <td>{TIPO_MANT_LABEL[m.tipoTrabajo] || m.tipoTrabajo}</td>
                         <td>{m.tecnico?.nombre || '—'}</td>
                         <td>{m.empresa?.nombre || '—'}</td>
+                        <td className="text-end">{fmtQ(m.costoMantenimiento ?? 0)}</td>
                         <td><EstadoBadge estado={m.estadoEquipoResultante} /></td>
                       </tr>
                     ))}

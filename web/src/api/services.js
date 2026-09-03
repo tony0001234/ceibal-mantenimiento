@@ -65,6 +65,18 @@ function descargarBlob(data, nombre) {
   window.URL.revokeObjectURL(url);
 }
 
+// -------------------- Costos de mantenimiento (admin) --------------------
+export const costosApi = {
+  opciones: () => api.get('/costos/opciones').then((r) => r.data),
+  listar: () => api.get('/costos').then((r) => r.data),
+  conteo: (categoria) =>
+    api.get('/costos/conteo', { params: { categoria } }).then((r) => r.data),
+  vigente: (categoria) =>
+    api.get('/costos/vigente', { params: { categoria } }).then((r) => r.data),
+  guardar: (dto) => api.post('/costos', dto).then((r) => r.data),
+  eliminar: (id) => api.delete(`/costos/${id}`).then((r) => r.data),
+};
+
 // -------------------- Usuarios (RF10) --------------------
 export const usuariosApi = {
   listar: () => api.get('/usuarios').then((r) => r.data),

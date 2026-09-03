@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { equiposApi, mantenimientosApi, catalogosApi } from '../api/services';
+import { equiposApi, mantenimientosApi, catalogosApi, costosApi } from '../api/services';
 import { mensajeError } from '../api/client';
 import {
   TIPOS_MANTENIMIENTO, PERIODOS, ESTADOS_RESULTANTE, TIPO_MANT_LABEL, hoyISO,
-  ESTADOS_EQUIPO,
+  ESTADOS_EQUIPO, fmtQ,
 } from '../data/constants';
 import EstadoBadge from '../components/EstadoBadge';
 
@@ -29,6 +29,7 @@ export default function RegistroMantenimiento() {
   const [verHistorial, setVerHistorial] = useState(false);
   const [historial, setHistorial] = useState([]);
   const [duplicado, setDuplicado] = useState(null);
+  const [costoVigente, setCostoVigente] = useState(null); // costo (automático) del equipo
 
   // --- Selector de equipo (modal con filtros) ---
   const [picker, setPicker] = useState(false);
@@ -106,6 +107,15 @@ export default function RegistroMantenimiento() {
     if (!form.equipoId) { setHistorial([]); return; }
     mantenimientosApi.listar({ equipo: form.equipoId }).then(setHistorial).catch(() => {});
   }, [form.equipoId, guardado]);
+
+  // Costo (automático) del mantenimiento según la categoría del equipo. Es solo
+  // lectura: no puede modificarse desde el registro (se define en el módulo de costos).
+  useEffect(() => {
+    if (!equipoSel?.categoria) { setCostoVigente(null); return; }
+    costosApi.vigente(equipoSel.categoria)
+      .then((r) => setCostoVigente(r?.costo ?? null))
+      .catch(() => setCostoVigente(null));
+  }, [equipoSel]);
 
   const faltan = {
     equipoId: tocado && !form.equipoId,
@@ -204,6 +214,11 @@ export default function RegistroMantenimiento() {
                         </div>
                         <div className="texto-auxiliar" style={{ fontSize: '13px' }}>
                           <i className="bi bi-geo-alt me-1" />{equipoSel.ubicacion} · <EstadoBadge estado={equipoSel.estado} />
+                        </div>
+                        <div className="texto-auxiliar" style={{ fontSize: '13px' }}>
+                          <i className="bi bi-cash-coin me-1" />Costo del mantenimiento:{' '}
+                          <strong>{costoVigente != null ? fmtQ(costoVigente) : '—'}</strong>
+                          <span className="ms-1">(automático, no editable)</span>
                         </div>
                       </div>
                       <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => setPicker(true)}>

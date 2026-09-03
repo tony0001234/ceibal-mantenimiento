@@ -10,6 +10,7 @@ import { EquiposModule } from './equipos/equipos.module';
 import { MantenimientosModule } from './mantenimientos/mantenimientos.module';
 import { CatalogosModule } from './catalogos/catalogos.module';
 import { ReportesModule } from './reportes/reportes.module';
+import { CostosModule } from './costos/costos.module';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { ReportesModule } from './reportes/reportes.module';
     MantenimientosModule,
     CatalogosModule,
     ReportesModule,
+    CostosModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -11,6 +11,7 @@ import {
 } from './schemas/mantenimiento.schema';
 import { CreateMantenimientoDto } from './dto/create-mantenimiento.dto';
 import { EquiposService } from '../equipos/equipos.service';
+import { CostosService } from '../costos/costos.service';
 
 const POPULATE = [
   { path: 'equipo', select: 'codigoInventario nombre tipoEquipo ubicacion estado' },
@@ -24,6 +25,7 @@ export class MantenimientosService {
     @InjectModel(Mantenimiento.name)
     private mantenimientoModel: Model<MantenimientoDocument>,
     private equiposService: EquiposService,
+    private costosService: CostosService,
   ) {}
 
   private rangoDia(fecha: string | Date) {
@@ -77,6 +79,14 @@ export class MantenimientosService {
       }
     }
 
+    // Costo del mantenimiento: se toma de la configuración vigente de la
+    // categoría del equipo y se CONGELA aquí (snapshot histórico). El cliente
+    // no puede enviarlo ni modificarlo (req 4 y 5).
+    const equipo: any = await this.equiposService.findOne(dto.equipo);
+    const categoriaCosto = equipo?.categoria || '';
+    const costoMantenimiento =
+      await this.costosService.costoVigente(categoriaCosto);
+
     const creado = new this.mantenimientoModel({
       equipo: new Types.ObjectId(dto.equipo),
       tecnico: new Types.ObjectId(tecnicoId),
@@ -89,6 +99,8 @@ export class MantenimientosService {
       fechaMantenimiento: new Date(dto.fechaMantenimiento),
       horaInicio: this.combinarFechaHora(dto.fechaMantenimiento, dto.horaInicio),
       horaFin: this.combinarFechaHora(dto.fechaMantenimiento, dto.horaFin),
+      costoMantenimiento,
+      categoriaCosto,
     });
     const guardado = await creado.save();
 

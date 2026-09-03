@@ -48,6 +48,18 @@ export class Mantenimiento {
 
   @Prop({ required: true })
   horaFin: Date;
+
+  // Costo del mantenimiento CONGELADO al momento de registrarlo (snapshot).
+  // Se calcula desde la configuración de costos de la categoría del equipo.
+  // NO se recibe del cliente ni se recalcula después: así los mantenimientos
+  // históricos conservan el costo que tenían cuando se registraron, aunque la
+  // configuración cambie más adelante. Default 0 para registros previos.
+  @Prop({ default: 0, min: 0 })
+  costoMantenimiento: number;
+
+  // Categoría de costo aplicada (trazabilidad del snapshot).
+  @Prop({ trim: true, default: '' })
+  categoriaCosto: string;
 }
 
 export const MantenimientoSchema = SchemaFactory.createForClass(Mantenimiento);

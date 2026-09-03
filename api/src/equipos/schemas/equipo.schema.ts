@@ -55,6 +55,20 @@ export class Equipo {
 
   @Prop({ required: true, enum: CRITICIDADES_EQUIPO, default: 'MEDIA' })
   criticidad: string;
+
+  // Categoría de contrato/grupo de mantenimiento (para el cálculo de costos).
+  // Deriva del listado del que proviene el equipo (mensual A/C, cuatrimestral
+  // A/C o refrigeración). Vacío si aún no está clasificado. Es aditivo: no
+  // afecta la lógica existente.
+  @Prop({ trim: true, default: '' })
+  categoria: string;
 }
+
+// Categorías de mantenimiento (contratos/grupos) para el cálculo de costos.
+export const CATEGORIAS_MANTENIMIENTO = [
+  { valor: 'mensual_ac', label: 'Equipos mensuales A/C' },
+  { valor: 'cuatrimestral_ac', label: 'Equipos cuatrimestrales A/C' },
+  { valor: 'refrigeracion', label: 'Refrigeradores / congeladores' },
+] as const;
 
 export const EquipoSchema = SchemaFactory.createForClass(Equipo);

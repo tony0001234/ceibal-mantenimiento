@@ -1,8 +1,12 @@
-import { IsEnum, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsEnum, IsIn, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 import {
   ESTADOS_EQUIPO,
   CRITICIDADES_EQUIPO,
+  CATEGORIAS_MANTENIMIENTO,
 } from '../schemas/equipo.schema';
+
+// Valores válidos de categoría (incluye '' para "sin categoría").
+const CATEGORIAS_VALIDAS = ['', ...CATEGORIAS_MANTENIMIENTO.map((c) => c.valor)];
 
 export class CreateEquipoDto {
   @IsString()
@@ -41,4 +45,9 @@ export class CreateEquipoDto {
   @IsOptional()
   @IsEnum(CRITICIDADES_EQUIPO)
   criticidad?: string;
+
+  // Categoría de contrato / periodicidad de mantenimiento (para el costo).
+  @IsOptional()
+  @IsIn(CATEGORIAS_VALIDAS, { message: 'Categoría de mantenimiento inválida.' })
+  categoria?: string;
 }

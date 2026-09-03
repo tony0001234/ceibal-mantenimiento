@@ -127,11 +127,30 @@ export class ReportesService {
     const duraciones = correctivos
       .map((m) => this.horasEntre(m.horaInicio, m.horaFin))
       .filter((h): h is number => h !== null);
-    const mttrHoras = duraciones.length
+    // MTTR expresado en MINUTOS (req 2). La fórmula es la misma (promedio de la
+    // duración horaInicio→horaFin de correctivos + emergencias); solo cambia la
+    // unidad de presentación: horas × 60, redondeado a minutos enteros.
+    const mttrMinutos = duraciones.length
       ? Math.round(
-          (duraciones.reduce((a, b) => a + b, 0) / duraciones.length) * 10,
-        ) / 10
+          (duraciones.reduce((a, b) => a + b, 0) / duraciones.length) * 60,
+        )
       : 0;
+
+    // Tiempo medio de mantenimiento PREVENTIVO, también en MINUTOS (req 2).
+    const preventivos = mantsMes.filter((m) => m.tipoTrabajo === 'preventivo');
+    const durPrev = preventivos
+      .map((m) => this.horasEntre(m.horaInicio, m.horaFin))
+      .filter((h): h is number => h !== null);
+    const preventivoMinutos = durPrev.length
+      ? Math.round(
+          (durPrev.reduce((a, b) => a + b, 0) / durPrev.length) * 60,
+        )
+      : 0;
+
+    // Numero de llamadas de emergencia registradas en el mes en curso.
+    const emergenciasMes = mantsMes.filter(
+      (m) => m.tipoTrabajo === 'llamada_emergencia',
+    ).length;
 
     const tipos = Object.keys(ETIQUETA_TIPO);
     const distribucionTipo = tipos.map((t) => ({
@@ -154,7 +173,9 @@ export class ReportesService {
       equiposRegistrados,
       equiposFuera,
       mantenimientosMes: mantsMes.length,
-      mttrHoras,
+      mttrMinutos,
+      preventivoMinutos,
+      emergenciasMes,
       distribucionTipo,
       ultimos,
     };
@@ -192,7 +213,7 @@ export class ReportesService {
       (m) => m.estadoEquipoResultante === 'fuera_de_servicio',
     ).length;
 
-    // MTTR del periodo (correctivos + emergencias).
+    // MTTR del periodo (correctivos + emergencias), en MINUTOS (req 2).
     const dur = resultados
       .filter(
         (m) =>
@@ -201,16 +222,25 @@ export class ReportesService {
       )
       .map((m) => this.horasEntre(m.horaInicio, m.horaFin))
       .filter((h): h is number => h !== null);
-    const mttrHoras = dur.length
-      ? Math.round((dur.reduce((a, b) => a + b, 0) / dur.length) * 10) / 10
+    const mttrMinutos = dur.length
+      ? Math.round((dur.reduce((a, b) => a + b, 0) / dur.length) * 60)
       : 0;
+
+    // Costo total del periodo: suma de los costos históricos ya registrados en
+    // cada mantenimiento (no se recalcula; req 9).
+    const costoTotal =
+      Math.round(
+        resultados.reduce((a, m) => a + (Number(m.costoMantenimiento) || 0), 0) *
+          100,
+      ) / 100;
 
     return {
       porTipo,
       equiposAtendidos,
       total: resultados.length,
       fueraDeServicio,
-      mttrHoras,
+      mttrMinutos,
+      costoTotal,
     };
   }
 
@@ -262,7 +292,8 @@ export class ReportesService {
       ['Total de mantenimientos', resumen.total],
       ['Equipos atendidos', resumen.equiposAtendidos],
       ['Intervenciones que dejaron equipo fuera de servicio', resumen.fueraDeServicio],
-      ['MTTR del periodo (h)', resumen.mttrHoras],
+      ['MTTR del periodo (min)', resumen.mttrMinutos],
+      ['Costo total del periodo (Q)', resumen.costoTotal],
       ...Object.entries(resumen.porTipo).map(
         ([t, c]) => [`  · ${t}`, c] as [string, number],
       ),
@@ -279,7 +310,7 @@ export class ReportesService {
     const inicioTabla = fila + 1;
     const headers = [
       'N.o', 'Fecha', 'N.o de bien', 'Equipo', 'Tipo', 'Periodo',
-      'Tecnico', 'Empresa', 'Estado final',
+      'Tecnico', 'Empresa', 'Estado final', 'Costo (Q)',
     ];
     const hRow = ws.getRow(inicioTabla);
     headers.forEach((h, i) => {
@@ -310,8 +341,12 @@ export class ReportesService {
           argb: m.estadoEquipoResultante === 'funcionando' ? 'FF1B8A4B' : 'FFC0392B',
         },
       };
+      const cCosto = r.getCell(10);
+      cCosto.value = Number(m.costoMantenimiento) || 0;
+      cCosto.numFmt = '"Q"#,##0.00';
+      cCosto.alignment = { horizontal: 'right' };
       if (idx % 2 === 1) {
-        for (let i = 1; i <= 9; i++) r.getCell(i).fill = fill('FFF4F7FB');
+        for (let i = 1; i <= 10; i++) r.getCell(i).fill = fill('FFF4F7FB');
       }
     });
 
@@ -321,11 +356,11 @@ export class ReportesService {
     }
 
     // Anchos y autofiltro
-    const anchos = [8, 12, 12, 34, 20, 14, 22, 26, 16];
+    const anchos = [8, 12, 12, 34, 20, 14, 22, 26, 16, 14];
     anchos.forEach((w, i) => (ws.getColumn(i + 1).width = w));
     ws.autoFilter = {
       from: { row: inicioTabla, column: 1 },
-      to: { row: inicioTabla, column: 9 },
+      to: { row: inicioTabla, column: 10 },
     };
     ws.views = [{ state: 'frozen', ySplit: inicioTabla }];
 
@@ -382,7 +417,8 @@ export class ReportesService {
         { label: 'Mantenimientos', val: String(resumen.total) },
         { label: 'Equipos atendidos', val: String(resumen.equiposAtendidos) },
         { label: 'Fuera de servicio', val: String(resumen.fueraDeServicio) },
-        { label: 'MTTR (h)', val: String(resumen.mttrHoras) },
+        { label: 'MTTR (min)', val: String(resumen.mttrMinutos) },
+        { label: 'Costo total', val: `Q${(resumen.costoTotal ?? 0).toFixed(2)}` },
       ];
       const gap = 10;
       const cardW = (contentW - gap * (tarjetas.length - 1)) / tarjetas.length;
@@ -415,12 +451,13 @@ export class ReportesService {
 
       // ---------- Tabla de detalle ----------
       const cols = [
-        { key: 'fecha', label: 'Fecha', w: 55, align: 'left' as const },
-        { key: 'equipo', label: 'Equipo', w: 140, align: 'left' as const },
-        { key: 'tipo', label: 'Tipo', w: 74, align: 'left' as const },
-        { key: 'tecnico', label: 'Técnico', w: 80, align: 'left' as const },
-        { key: 'empresa', label: 'Empresa', w: 76, align: 'left' as const },
-        { key: 'estado', label: 'Estado final', w: contentW - 55 - 140 - 74 - 80 - 76, align: 'left' as const },
+        { key: 'fecha', label: 'Fecha', w: 48, align: 'left' as const },
+        { key: 'equipo', label: 'Equipo', w: 118, align: 'left' as const },
+        { key: 'tipo', label: 'Tipo', w: 66, align: 'left' as const },
+        { key: 'tecnico', label: 'Técnico', w: 70, align: 'left' as const },
+        { key: 'empresa', label: 'Empresa', w: 66, align: 'left' as const },
+        { key: 'costo', label: 'Costo (Q)', w: 54, align: 'right' as const },
+        { key: 'estado', label: 'Estado final', w: contentW - 48 - 118 - 66 - 70 - 66 - 54, align: 'left' as const },
       ];
       const padX = 5;
 
@@ -454,6 +491,7 @@ export class ReportesService {
           tipo: ETIQUETA_TIPO[m.tipoTrabajo] || m.tipoTrabajo,
           tecnico: m.tecnico?.nombre || '—',
           empresa: m.empresa?.nombre || '—',
+          costo: `Q${(Number(m.costoMantenimiento) || 0).toFixed(2)}`,
           estado: ETIQUETA_ESTADO[m.estadoEquipoResultante] || m.estadoEquipoResultante,
         };
         // Altura de fila segun el contenido mas alto

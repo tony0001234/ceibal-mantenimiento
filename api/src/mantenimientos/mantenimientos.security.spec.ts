@@ -48,8 +48,12 @@ describe('Seguridad de empresa afiliada en mantenimientos', () => {
     };
     modelo.findOne = () => ({ exec: async () => null }); // sin duplicado
 
-    const equiposService: any = { actualizarEstado: jest.fn().mockResolvedValue(undefined) };
-    const service = new MantenimientosService(modelo, equiposService);
+    const equiposService: any = {
+      actualizarEstado: jest.fn().mockResolvedValue(undefined),
+      findOne: jest.fn().mockResolvedValue({ categoria: '' }),
+    };
+    const costosService: any = { costoVigente: jest.fn().mockResolvedValue(0) };
+    const service = new MantenimientosService(modelo, equiposService, costosService);
 
     // El DTO NO trae empresa; la empresa llega como 3er argumento (del token).
     const dto: any = { ...BODY_VALIDO };
@@ -63,7 +67,11 @@ describe('Seguridad de empresa afiliada en mantenimientos', () => {
   it('sin empresa afiliada, el registro es rechazado', async () => {
     const modelo: any = function () { return { save: async () => ({}) }; };
     modelo.findOne = () => ({ exec: async () => null });
-    const service = new MantenimientosService(modelo, { actualizarEstado: jest.fn() } as any);
+    const service = new MantenimientosService(
+      modelo,
+      { actualizarEstado: jest.fn() } as any,
+      { costoVigente: jest.fn() } as any,
+    );
 
     await expect(
       service.create({ ...BODY_VALIDO } as any, new Types.ObjectId().toString(), undefined),

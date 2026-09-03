@@ -7,6 +7,7 @@ import {
   MantenimientoSchema,
 } from './schemas/mantenimiento.schema';
 import { EquiposModule } from '../equipos/equipos.module';
+import { CostosModule } from '../costos/costos.module';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { EquiposModule } from '../equipos/equipos.module';
       { name: Mantenimiento.name, schema: MantenimientoSchema },
     ]),
     EquiposModule,
+    CostosModule,
   ],
   controllers: [MantenimientosController],
   providers: [MantenimientosService],
