@@ -105,6 +105,43 @@ export const PERIODICIDADES = [
   { valor: 'Cuatrimestral', periodos: 4 },
 ];
 
+// ---------- Combinar listas fijas con valores creados en el catálogo ----------
+// Las categorías y periodicidades son extensibles desde el módulo de Costos:
+// los nuevos valores se guardan en el catálogo y se reutilizan en Costos y Equipos.
+
+// Etiqueta de una categoría: usa la fija si existe; si no, el valor tal cual.
+export const categoriaLabel = (valor) => CATEGORIA_LABEL[valor] || valor || '';
+// Etiqueta corta de una categoría (para tablas/chips).
+export const categoriaCorta = (valor) => CATEGORIA_CORTA[valor] || valor || '';
+
+// Une las categorías fijas con las del catálogo (sin duplicar), conservando etiqueta.
+export const combinarCategorias = (catalogo = []) => {
+  const lista = CATEGORIAS_MANTENIMIENTO.map((c) => ({ valor: c.valor, label: c.label }));
+  const vistos = new Set(lista.map((c) => c.valor));
+  for (const item of catalogo || []) {
+    const valor = (item?.valor || '').trim();
+    if (valor && !vistos.has(valor)) {
+      vistos.add(valor);
+      lista.push({ valor, label: valor });
+    }
+  }
+  return lista;
+};
+
+// Une las periodicidades fijas con las del catálogo (sin duplicar).
+export const combinarPeriodicidades = (catalogo = []) => {
+  const lista = PERIODICIDADES.map((p) => ({ valor: p.valor, periodos: p.periodos }));
+  const vistos = new Set(lista.map((p) => p.valor));
+  for (const item of catalogo || []) {
+    const valor = (item?.valor || '').trim();
+    if (valor && !vistos.has(valor)) {
+      vistos.add(valor);
+      lista.push({ valor, periodos: null });
+    }
+  }
+  return lista;
+};
+
 // Formato monetario en quetzales (GTQ).
 export const fmtQ = (n) =>
   new Intl.NumberFormat('es-GT', { style: 'currency', currency: 'GTQ', minimumFractionDigits: 2 })

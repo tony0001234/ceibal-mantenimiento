@@ -1,19 +1,26 @@
 import { useState, useEffect, useMemo } from 'react';
-import { costosApi } from '../api/services';
+import { costosApi, catalogosApi } from '../api/services';
 import { mensajeError } from '../api/client';
 import {
-  CATEGORIAS_MANTENIMIENTO, CATEGORIA_LABEL, PERIODICIDADES, fmtQ,
+  CATEGORIAS_MANTENIMIENTO, PERIODICIDADES, fmtQ,
+  categoriaLabel, combinarCategorias, combinarPeriodicidades,
 } from '../data/constants';
 
 // Módulo de configuración y cálculo del costo de mantenimiento por categoría
 // (RF nuevo, solo administrador). Fórmula: (monto / equipos) / periodos.
+// Las categorías y periodicidades son extensibles: los valores nuevos se guardan
+// en el catálogo y quedan disponibles también en la pestaña de Equipos.
 const VACIO = {
   categoria: '', montoOfertado: '', cantidadEquipos: '', periodicidad: '', numeroPeriodos: '',
 };
+const NUEVA = '__nueva__'; // opción centinela del desplegable "agregar nueva categoría".
 
 export default function Costos() {
   const [configs, setConfigs] = useState([]);
+  const [catCategorias, setCatCategorias] = useState([]);   // categorías del catálogo
+  const [catPeriodicidades, setCatPeriodicidades] = useState([]); // periodicidades del catálogo
   const [form, setForm] = useState(VACIO);
+  const [nuevaCat, setNuevaCat] = useState(false); // ¿escribiendo una categoría nueva?
   const [editando, setEditando] = useState(false);
   const [tocado, setTocado] = useState(false);
   const [error, setError] = useState('');
@@ -27,14 +34,50 @@ export default function Costos() {
       .catch((e) => setError(mensajeError(e, 'No se pudieron cargar las configuraciones.')))
       .finally(() => setCargando(false));
   };
-  useEffect(() => { cargar(); }, []);
+
+  // Carga las categorías y periodicidades creadas en el catálogo (extensibles).
+  const cargarCatalogos = () => {
+    catalogosApi.listar('categoria').then((d) => setCatCategorias(d || [])).catch(() => {});
+    catalogosApi.listar('periodicidad').then((d) => setCatPeriodicidades(d || [])).catch(() => {});
+  };
+
+  useEffect(() => { cargar(); cargarCatalogos(); }, []);
+
+  // Categorías disponibles = fijas + catálogo + las ya usadas en configuraciones.
+  const categorias = useMemo(() => {
+    const delCatalogo = [
+      ...catCategorias,
+      ...configs.map((c) => ({ valor: c.categoria })),
+    ];
+    return combinarCategorias(delCatalogo);
+  }, [catCategorias, configs]);
+
+  // Periodicidades disponibles = fijas + catálogo + las ya usadas en configuraciones.
+  const periodicidades = useMemo(
+    () => combinarPeriodicidades([...catPeriodicidades, ...configs.map((c) => ({ valor: c.periodicidad }))]),
+    [catPeriodicidades, configs],
+  );
+
+  // Mapa periodicidad → períodos sugeridos (fijos + los aprendidos de configuraciones).
+  const periodosSugeridos = useMemo(() => {
+    const m = {};
+    PERIODICIDADES.forEach((p) => { m[p.valor] = p.periodos; });
+    configs.forEach((c) => { if (c.periodicidad) m[c.periodicidad] = c.numeroPeriodos; });
+    return m;
+  }, [configs]);
 
   const set = (k, v) => { setForm((f) => ({ ...f, [k]: v })); setOk(''); };
 
+  // Selección de categoría en el desplegable (incluye la opción "nueva").
+  const elegirCategoria = (valor) => {
+    if (valor === NUEVA) { setNuevaCat(true); set('categoria', ''); return; }
+    setNuevaCat(false); set('categoria', valor);
+  };
+
   // Al elegir periodicidad, sugiere el número de períodos (editable).
   const elegirPeriodicidad = (valor) => {
-    const p = PERIODICIDADES.find((x) => x.valor === valor);
-    setForm((f) => ({ ...f, periodicidad: valor, numeroPeriodos: p ? String(p.periodos) : f.numeroPeriodos }));
+    const sugerido = periodosSugeridos[valor];
+    setForm((f) => ({ ...f, periodicidad: valor, numeroPeriodos: sugerido != null ? String(sugerido) : f.numeroPeriodos }));
     setOk('');
   };
 
@@ -50,6 +93,7 @@ export default function Costos() {
   const monto = num(form.montoOfertado);
   const equipos = num(form.cantidadEquipos);
   const periodos = num(form.numeroPeriodos);
+  const categoria = (form.categoria || '').trim();
 
   // Cálculo del costo por mantenimiento en vivo (misma fórmula que el backend).
   const costo = useMemo(() => {
@@ -58,13 +102,13 @@ export default function Costos() {
   }, [monto, equipos, periodos]);
 
   const errores = {
-    categoria: tocado && !form.categoria,
+    categoria: tocado && !categoria,
     monto: tocado && !(monto > 0),
     equipos: tocado && !(equipos > 0),
     periodicidad: tocado && !form.periodicidad,
     periodos: tocado && !(periodos > 0),
   };
-  const invalido = !form.categoria || !(monto > 0) || !(equipos > 0) || !form.periodicidad || !(periodos > 0);
+  const invalido = !categoria || !(monto > 0) || !(equipos > 0) || !form.periodicidad.trim() || !(periodos > 0);
 
   const editar = (c) => {
     setForm({
@@ -74,6 +118,7 @@ export default function Costos() {
       periodicidad: c.periodicidad,
       numeroPeriodos: String(c.numeroPeriodos),
     });
+    setNuevaCat(false);
     setEditando(true);
     setTocado(false);
     setOk('');
@@ -81,23 +126,43 @@ export default function Costos() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const limpiar = () => { setForm(VACIO); setEditando(false); setTocado(false); };
+  const limpiar = () => { setForm(VACIO); setNuevaCat(false); setEditando(false); setTocado(false); };
+
+  // Persiste en el catálogo un valor nuevo (categoría/periodicidad) para reutilizarlo.
+  // Idempotente: si ya existe, el backend responde 409 y lo ignoramos.
+  const persistirCatalogo = async (tipo, valor, existentes) => {
+    const v = (valor || '').trim();
+    if (!v) return;
+    const yaExiste = existentes.some((x) => (x.valor || '').trim().toLowerCase() === v.toLowerCase());
+    if (yaExiste) return;
+    try { await catalogosApi.crear(tipo, v); } catch { /* duplicado u otro: no bloquea el guardado */ }
+  };
 
   const guardar = async () => {
     setTocado(true); setError(''); setOk('');
     if (invalido) return;
     setGuardando(true);
+    const periodicidad = form.periodicidad.trim();
     try {
+      // 1) Guardar la configuración de costo.
       await costosApi.guardar({
-        categoria: form.categoria,
+        categoria,
         montoOfertado: monto,
         cantidadEquipos: equipos,
-        periodicidad: form.periodicidad,
+        periodicidad,
         numeroPeriodos: periodos,
       });
+      // 2) Registrar en el catálogo los valores nuevos, para reutilizarlos.
+      const fijasCat = CATEGORIAS_MANTENIMIENTO.map((c) => ({ valor: c.valor }));
+      const fijasPer = PERIODICIDADES.map((p) => ({ valor: p.valor }));
+      await Promise.all([
+        persistirCatalogo('categoria', categoria, [...fijasCat, ...catCategorias]),
+        persistirCatalogo('periodicidad', periodicidad, [...fijasPer, ...catPeriodicidades]),
+      ]);
       setOk(`Configuración guardada. Costo por mantenimiento: ${fmtQ(costo)}.`);
       limpiar();
       cargar();
+      cargarCatalogos();
     } catch (e) {
       setError(mensajeError(e, 'No se pudo guardar la configuración.'));
     } finally {
@@ -106,7 +171,7 @@ export default function Costos() {
   };
 
   const eliminar = async (c) => {
-    if (!window.confirm(`¿Eliminar la configuración de "${CATEGORIA_LABEL[c.categoria] || c.categoria}"?`)) return;
+    if (!window.confirm(`¿Eliminar la configuración de "${categoriaLabel(c.categoria)}"?`)) return;
     try { await costosApi.eliminar(c._id); cargar(); }
     catch (e) { setError(mensajeError(e, 'No se pudo eliminar.')); }
   };
@@ -133,13 +198,31 @@ export default function Costos() {
             <div className="card-body">
               <div className="mb-3">
                 <label className="form-label">Categoría / tipo de equipos <span className="text-danger">*</span></label>
-                <select className={`form-select ${errores.categoria ? 'is-invalid' : ''}`}
-                  value={form.categoria} disabled={editando}
-                  onChange={(e) => set('categoria', e.target.value)}>
-                  <option value="">Seleccione…</option>
-                  {CATEGORIAS_MANTENIMIENTO.map((c) => <option key={c.valor} value={c.valor}>{c.label}</option>)}
-                </select>
-                {errores.categoria && <div className="invalid-feedback">Seleccione una categoría.</div>}
+                {nuevaCat ? (
+                  <div className="input-group">
+                    <input type="text" autoFocus
+                      className={`form-control ${errores.categoria ? 'is-invalid' : ''}`}
+                      placeholder="Nombre de la nueva categoría"
+                      value={form.categoria} onChange={(e) => set('categoria', e.target.value)} />
+                    <button type="button" className="btn btn-outline-secondary"
+                      title="Volver a la lista" onClick={() => { setNuevaCat(false); set('categoria', ''); }}>
+                      <i className="bi bi-list-ul" />
+                    </button>
+                    {errores.categoria && <div className="invalid-feedback">Escriba el nombre de la categoría.</div>}
+                  </div>
+                ) : (
+                  <select className={`form-select ${errores.categoria ? 'is-invalid' : ''}`}
+                    value={form.categoria} disabled={editando}
+                    onChange={(e) => elegirCategoria(e.target.value)}>
+                    <option value="">Seleccione…</option>
+                    {categorias.map((c) => <option key={c.valor} value={c.valor}>{c.label}</option>)}
+                    <option value={NUEVA}>➕ Agregar nueva categoría…</option>
+                  </select>
+                )}
+                {!nuevaCat && errores.categoria && <div className="invalid-feedback d-block">Seleccione una categoría.</div>}
+                {!editando && (
+                  <div className="form-text">Puede crear una categoría nueva; quedará disponible también en Equipos.</div>
+                )}
               </div>
 
               <div className="mb-3">
@@ -158,7 +241,7 @@ export default function Costos() {
                     className={`form-control ${errores.equipos ? 'is-invalid' : ''}`}
                     placeholder="Ej.: 60" value={form.cantidadEquipos}
                     onChange={(e) => set('cantidadEquipos', e.target.value)} />
-                  <button type="button" className="btn btn-outline-secondary" disabled={!form.categoria}
+                  <button type="button" className="btn btn-outline-secondary" disabled={!categoria}
                     title="Usar la cantidad de equipos vigentes en los listados de esta categoría"
                     onClick={usarConteoListados}>
                     <i className="bi bi-list-check me-1" />De listados
@@ -175,9 +258,10 @@ export default function Costos() {
                     placeholder="Mensual, Trimestral…" value={form.periodicidad}
                     onChange={(e) => elegirPeriodicidad(e.target.value)} />
                   <datalist id="periodicidades">
-                    {PERIODICIDADES.map((p) => <option key={p.valor} value={p.valor} />)}
+                    {periodicidades.map((p) => <option key={p.valor} value={p.valor} />)}
                   </datalist>
                   {errores.periodicidad && <div className="invalid-feedback">Indique la periodicidad.</div>}
+                  <div className="form-text">Escriba una nueva o elija una existente.</div>
                 </div>
                 <div className="col-5">
                   <label className="form-label">N.º de períodos <span className="text-danger">*</span></label>
@@ -228,7 +312,7 @@ export default function Costos() {
                   {!cargando && configs.length === 0 && <tr><td colSpan={7} className="text-center texto-auxiliar py-4">Aún no hay configuraciones. Cree la primera con el formulario.</td></tr>}
                   {!cargando && configs.map((c) => (
                     <tr key={c._id}>
-                      <td>{CATEGORIA_LABEL[c.categoria] || c.categoria}</td>
+                      <td>{categoriaLabel(c.categoria)}</td>
                       <td className="text-end">{fmtQ(c.montoOfertado)}</td>
                       <td className="text-center">{c.cantidadEquipos}</td>
                       <td>{c.periodicidad}</td>

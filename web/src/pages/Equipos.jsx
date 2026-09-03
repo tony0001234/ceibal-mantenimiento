@@ -1,11 +1,11 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { equiposApi, catalogosApi } from '../api/services';
 import { mensajeError } from '../api/client';
 import {
   ESTADOS, ESTADOS_EQUIPO, CRITICIDADES,
-  CATEGORIAS_MANTENIMIENTO, CATEGORIA_CORTA,
+  combinarCategorias, categoriaCorta,
 } from '../data/constants';
 import EstadoBadge from '../components/EstadoBadge';
 
@@ -38,6 +38,7 @@ export default function Equipos() {
   const [tiposEquipo, setTiposEquipo] = useState([]);
   const [subtipos, setSubtipos] = useState([]); // {valor, padre}
   const [marcas, setMarcas] = useState([]);
+  const [catCategorias, setCatCategorias] = useState([]); // categorías del catálogo (extensibles)
 
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState(VACIO);
@@ -83,7 +84,13 @@ export default function Equipos() {
     catalogosApi.listar('marca')
       .then((data) => setMarcas((data || []).map((x) => x.valor)))
       .catch(() => {});
+    catalogosApi.listar('categoria')
+      .then((data) => setCatCategorias(data || []))
+      .catch(() => {});
   }, []);
+
+  // Categorías / periodicidades disponibles = fijas + las creadas desde Costos.
+  const categorias = useMemo(() => combinarCategorias(catCategorias), [catCategorias]);
 
   // Subtipos disponibles segun el tipo de equipo seleccionado (padre) en el modal.
   const subtiposDisponibles = subtipos
@@ -203,7 +210,7 @@ export default function Equipos() {
               <label className="form-label">Periodicidad de mantenimiento</label>
               <select className="form-select" value={fCategoria} onChange={(e) => setFCategoria(e.target.value)}>
                 <option value="">Todas</option>
-                {CATEGORIAS_MANTENIMIENTO.map((c) => <option key={c.valor} value={c.valor}>{c.label}</option>)}
+                {categorias.map((c) => <option key={c.valor} value={c.valor}>{c.label}</option>)}
               </select>
             </div>
           </div>
@@ -239,7 +246,7 @@ export default function Equipos() {
                   <td>{e.subTipo}</td>
                   <td>{e.marca}</td>
                   <td>{e.ubicacion}</td>
-                  <td>{CATEGORIA_CORTA[e.categoria] || <span className="texto-auxiliar">—</span>}</td>
+                  <td>{e.categoria ? categoriaCorta(e.categoria) : <span className="texto-auxiliar">—</span>}</td>
                   <td><EstadoBadge estado={e.estado} /></td>
                   <td className="text-end" style={{ whiteSpace: 'nowrap' }}>
                     <button className="btn btn-sm btn-outline-primary me-1" title="Ver historial" onClick={() => navigate('/app/historial', { state: { equipoId: e._id } })}>
@@ -355,9 +362,12 @@ export default function Equipos() {
                     <label className="form-label">Periodicidad de mantenimiento</label>
                     <select className="form-select" value={form.categoria} onChange={(e) => setForm({ ...form, categoria: e.target.value })}>
                       <option value="">Sin categoría</option>
-                      {CATEGORIAS_MANTENIMIENTO.map((c) => <option key={c.valor} value={c.valor}>{c.label}</option>)}
+                      {categorias.map((c) => <option key={c.valor} value={c.valor}>{c.label}</option>)}
+                      {form.categoria && !categorias.some((c) => c.valor === form.categoria) && (
+                        <option value={form.categoria}>{form.categoria}</option>
+                      )}
                     </select>
-                    <div className="form-text">Determina el contrato y el costo de mantenimiento aplicable al equipo.</div>
+                    <div className="form-text">Determina el contrato y el costo de mantenimiento. Las categorías se crean en <strong>Costos de mantenimiento</strong>.</div>
                   </div>
                   <div className="col-3">
                     <label className="form-label">Criticidad</label>

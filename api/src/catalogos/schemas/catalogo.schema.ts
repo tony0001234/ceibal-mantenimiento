@@ -3,14 +3,18 @@ import { Document } from 'mongoose';
 
 export type CatalogoDocument = Catalogo & Document;
 
-// Catalogos EDITABLES desde Administracion:
+// Catalogos EDITABLES desde Administracion / Costos:
 //  - tipoEquipo, subTipo, marca, ubicacion  (texto libre controlado)
+//  - categoria     : categorias / tipos de equipos para el costo (editable desde Costos)
+//  - periodicidad  : periodicidades de mantenimiento (editable desde Costos)
 // estado y criticidad NO son catalogos editables: son listas fijas del sistema.
 export const TIPOS_CATALOGO = [
   'tipoEquipo',
   'subTipo',
   'marca',
   'ubicacion',
+  'categoria',
+  'periodicidad',
 ] as const;
 
 @Schema({ timestamps: true, collection: 'catalogo' })
