@@ -8,6 +8,7 @@ import {
   MantenimientoDocument,
 } from '../mantenimientos/schemas/mantenimiento.schema';
 import { Equipo, EquipoDocument } from '../equipos/schemas/equipo.schema';
+import { generarImagenesGraficas } from './graficas.util';
 
 const ETIQUETA_TIPO: Record<string, string> = {
   preventivo: 'Preventivo',
@@ -96,6 +97,161 @@ export class ReportesService {
   private fechaCorta(d: Date | string): string {
     return new Date(d).toISOString().slice(0, 10);
   }
+
+  // Tiempo medio (en minutos) de un conjunto de mantenimientos, según la
+  // duración horaInicio→horaFin. Fuente y lógica ÚNICAS reutilizadas por el
+  // Dashboard y por los reportes (web, Excel y PDF) para el preventivo y el MTTR.
+  private promedioMinutos(mants: any[]): number {
+    const dur = mants
+      .map((m) => this.horasEntre(m.horaInicio, m.horaFin))
+      .filter((h): h is number => h !== null);
+    return dur.length
+      ? Math.round((dur.reduce((a, b) => a + b, 0) / dur.length) * 60)
+      : 0;
+  }
+
+  // Serie diaria del período: por cada día (mismo formato de fecha que el
+  // detalle del reporte, para que las gráficas coincidan con los datos), acumula
+  //  - costo:        suma de costoMantenimiento de los mantenimientos de ese día.
+  //  - emergencias:  n.º de mantenimientos tipo 'llamada_emergencia'.
+  //  - reparaciones: n.º de mantenimientos correctivos ('correctivo').
+  //    (Las llamadas de emergencia se cuentan aparte, en su propia serie.)
+  // Usa datos reales; los días sin actividad quedan en 0.
+  private serieDiaria(
+    mants: any[],
+    inicioISO?: string,
+    finISO?: string,
+  ): {
+    fecha: string;
+    dia: number;
+    costo: number;
+    emergencias: number;
+    reparaciones: number;
+  }[] {
+    // Rango: usa las fechas indicadas o, en su defecto, el mínimo/máximo de los datos.
+    const fechasDatos = mants.map((m) => this.fechaCorta(m.fechaMantenimiento));
+    const desde = inicioISO || (fechasDatos.length ? fechasDatos.reduce((a, b) => (a < b ? a : b)) : undefined);
+    const hasta = finISO || (fechasDatos.length ? fechasDatos.reduce((a, b) => (a > b ? a : b)) : undefined);
+    if (!desde || !hasta || desde > hasta) return [];
+
+    const MAX_DIAS = 366; // Cota de seguridad para rangos muy amplios.
+    const dias: any[] = [];
+    const cursor = new Date(desde + 'T00:00:00.000Z');
+    const fin = new Date(hasta + 'T00:00:00.000Z');
+    while (cursor <= fin && dias.length < MAX_DIAS) {
+      dias.push({
+        fecha: cursor.toISOString().slice(0, 10),
+        dia: cursor.getUTCDate(),
+        costo: 0,
+        emergencias: 0,
+        reparaciones: 0,
+      });
+      cursor.setUTCDate(cursor.getUTCDate() + 1);
+    }
+    const indice = new Map<string, number>(dias.map((d, i) => [d.fecha, i]));
+    for (const m of mants) {
+      const i = indice.get(this.fechaCorta(m.fechaMantenimiento));
+      if (i === undefined) continue;
+      dias[i].costo += Number(m.costoMantenimiento) || 0;
+      if (m.tipoTrabajo === 'llamada_emergencia') dias[i].emergencias += 1;
+      if (m.tipoTrabajo === 'correctivo') dias[i].reparaciones += 1;
+    }
+    for (const d of dias) d.costo = Math.round(d.costo * 100) / 100;
+    return dias;
+  }
+
+  // Formato de quetzales con separador de miles y 2 decimales (para el PDF).
+  private quetzales(n: number): string {
+    const [ent, dec] = (Number(n) || 0).toFixed(2).split('.');
+    return 'Q' + ent.replace(/\B(?=(\d{3})+(?!\d))/g, ',') + '.' + dec;
+  }
+
+  // Marcas "redondas" del eje Y (0, paso, 2·paso, … máximo).
+  private marcasEjeY(max: number, entero: boolean): number[] {
+    if (max <= 0) return [0, 1];
+    let base = max / 4;
+    if (entero) base = Math.max(1, base);
+    const mag = Math.pow(10, Math.floor(Math.log10(base)));
+    const norm = base / mag;
+    let paso =
+      mag * (norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 2.5 ? 2.5 : norm <= 5 ? 5 : 10);
+    if (entero) paso = Math.max(1, Math.round(paso));
+    const tope = Math.ceil(max / paso) * paso;
+    const marcas: number[] = [];
+    for (let v = 0; v <= tope + 1e-9; v += paso) {
+      marcas.push(entero ? Math.round(v) : Math.round(v * 100) / 100);
+    }
+    return marcas;
+  }
+
+  // Dibuja en el PDF una gráfica de barras (una serie) con ejes, barras,
+  // etiquetas de día y leyenda de ejes. Devuelve la coordenada Y siguiente.
+  // Usa los MISMOS datos (seriesDiarias) y colores que las gráficas de la web.
+  private dibujarGraficaBarras(
+    doc: any,
+    o: {
+      x: number; y: number; w: number; h: number;
+      titulo: string; datos: any[]; campo: string; color: string;
+      ejeY: string; moneda?: boolean;
+    },
+  ): number {
+    const { x, y, w, h, titulo, datos, campo, color, ejeY, moneda } = o;
+    doc.fillColor(AZUL_OSCURO).font('Helvetica-Bold').fontSize(9.5)
+      .text(titulo, x, y, { width: w, lineBreak: false });
+
+    const plotTop = y + 15;
+    const labelW = 42;                    // espacio para las marcas del eje Y
+    const plotX = x + labelW;
+    const plotW = w - labelW - 4;
+    const baseY = plotTop + h;
+    const max = Math.max(1, ...datos.map((d) => Number(d[campo]) || 0));
+    const marcas = this.marcasEjeY(max, !moneda);
+    const tope = marcas[marcas.length - 1] || 1;
+
+    // Ejes
+    doc.strokeColor(GRIS_BORDE).lineWidth(0.6)
+      .moveTo(plotX, plotTop).lineTo(plotX, baseY).stroke()
+      .moveTo(plotX, baseY).lineTo(plotX + plotW, baseY).stroke();
+
+    // Marcas y líneas guía del eje Y (TODAS las cantidades)
+    doc.font('Helvetica').fontSize(7).fillColor('#8894A6');
+    marcas.forEach((t) => {
+      const yy = baseY - (t / tope) * h;
+      doc.strokeColor('#EEF2F7').lineWidth(0.5)
+        .moveTo(plotX, yy).lineTo(plotX + plotW, yy).stroke();
+      doc.fillColor('#8894A6')
+        .text(moneda ? this.quetzales(t) : String(t), x, yy - 3, { width: labelW - 5, align: 'right', lineBreak: false });
+    });
+
+    // Barras
+    const n = datos.length;
+    const gap = n > 20 ? 1.5 : 3;
+    const bw = Math.max(1.5, (plotW - gap * n) / n);
+    datos.forEach((d, i) => {
+      const v = Number(d[campo]) || 0;
+      if (v <= 0) return;
+      const bh = (v / tope) * h;
+      const bx = plotX + gap / 2 + i * (bw + gap);
+      doc.fillColor(color).rect(bx, baseY - bh, bw, bh).fill();
+    });
+
+    // Etiquetas del eje X (día del mes), espaciadas para no amontonarse
+    doc.font('Helvetica').fontSize(6.5).fillColor('#8894A6');
+    const step = Math.max(1, Math.ceil(n / 12));
+    datos.forEach((d, i) => {
+      if (i % step === 0 || i === n - 1) {
+        const bx = plotX + gap / 2 + i * (bw + gap);
+        doc.text(String(d.dia), bx - 3, baseY + 2, { width: bw + 6, align: 'center', lineBreak: false });
+      }
+    });
+
+    // Leyenda de ejes
+    doc.font('Helvetica').fontSize(6.5).fillColor('#8894A6')
+      .text(`Día del mes  ·  ${ejeY}`, plotX, baseY + 11, { width: plotW, align: 'center', lineBreak: false });
+
+    return baseY + 22;
+  }
+
   private hora(d?: Date): string {
     if (!d) return '—';
     const x = new Date(d);
@@ -105,8 +261,13 @@ export class ReportesService {
   // ---------- Panel de indicadores / Dashboard (RF08) ----------
   async indicadores() {
     const ahora = new Date();
-    const inicioMes = new Date(ahora.getFullYear(), ahora.getMonth(), 1);
-    const finMes = new Date(ahora.getFullYear(), ahora.getMonth() + 1, 1);
+    // Límites del mes en UTC-medianoche, coherentes con cómo se almacenan las
+    // fechas (new Date('YYYY-MM-DD') = UTC) y con la vista de Reportes. Antes se
+    // usaba medianoche LOCAL, por lo que en zonas con desfase negativo (p. ej.
+    // Guatemala, UTC-6) los registros del día 1 (guardados a las 00:00 UTC)
+    // quedaban fuera del mes y no aparecían en el panel ni en sus gráficas.
+    const inicioMes = new Date(Date.UTC(ahora.getFullYear(), ahora.getMonth(), 1));
+    const finMes = new Date(Date.UTC(ahora.getFullYear(), ahora.getMonth() + 1, 1));
 
     const equiposRegistrados = await this.equipoModel
       .countDocuments({ estado: { $ne: 'BAJA' } })
@@ -119,38 +280,32 @@ export class ReportesService {
       .find({ fechaMantenimiento: { $gte: inicioMes, $lt: finMes } })
       .exec();
 
+    // MTTR expresado en MINUTOS (req 2): promedio de la duración
+    // horaInicio→horaFin de correctivos + emergencias (misma lógica que resumen).
     const correctivos = mantsMes.filter(
       (m) =>
         m.tipoTrabajo === 'correctivo' ||
         m.tipoTrabajo === 'llamada_emergencia',
     );
-    const duraciones = correctivos
-      .map((m) => this.horasEntre(m.horaInicio, m.horaFin))
-      .filter((h): h is number => h !== null);
-    // MTTR expresado en MINUTOS (req 2). La fórmula es la misma (promedio de la
-    // duración horaInicio→horaFin de correctivos + emergencias); solo cambia la
-    // unidad de presentación: horas × 60, redondeado a minutos enteros.
-    const mttrMinutos = duraciones.length
-      ? Math.round(
-          (duraciones.reduce((a, b) => a + b, 0) / duraciones.length) * 60,
-        )
-      : 0;
+    const mttrMinutos = this.promedioMinutos(correctivos);
 
     // Tiempo medio de mantenimiento PREVENTIVO, también en MINUTOS (req 2).
     const preventivos = mantsMes.filter((m) => m.tipoTrabajo === 'preventivo');
-    const durPrev = preventivos
-      .map((m) => this.horasEntre(m.horaInicio, m.horaFin))
-      .filter((h): h is number => h !== null);
-    const preventivoMinutos = durPrev.length
-      ? Math.round(
-          (durPrev.reduce((a, b) => a + b, 0) / durPrev.length) * 60,
-        )
-      : 0;
+    const preventivoMinutos = this.promedioMinutos(preventivos);
 
     // Numero de llamadas de emergencia registradas en el mes en curso.
     const emergenciasMes = mantsMes.filter(
       (m) => m.tipoTrabajo === 'llamada_emergencia',
     ).length;
+
+    // Serie diaria del mes en curso (para las gráficas del Dashboard):
+    // costo, emergencias y reparaciones por día, desde el 1.º del mes hasta hoy
+    // (acotado al último día del mes, por si la hora UTC ya cruzó a otro mes).
+    const inicioISO = this.fechaCorta(inicioMes);
+    const finMesISO = this.fechaCorta(new Date(finMes.getTime() - 86_400_000));
+    const hoyISO = this.fechaCorta(ahora);
+    const finSerieISO = hoyISO < finMesISO ? hoyISO : finMesISO;
+    const seriesDiarias = this.serieDiaria(mantsMes, inicioISO, finSerieISO);
 
     const tipos = Object.keys(ETIQUETA_TIPO);
     const distribucionTipo = tipos.map((t) => ({
@@ -177,6 +332,7 @@ export class ReportesService {
       preventivoMinutos,
       emergenciasMes,
       distribucionTipo,
+      seriesDiarias,
       ultimos,
     };
   }
@@ -194,11 +350,11 @@ export class ReportesService {
       ])
       .exec();
 
-    return { resultados, resumen: this.resumen(resultados) };
+    return { resultados, resumen: this.resumen(resultados, f) };
   }
 
   // Resumen cuantitativo del periodo (totales, equipos atendidos, MTTR, etc.).
-  private resumen(resultados: any[]) {
+  private resumen(resultados: any[], f: FiltrosReporte = {}) {
     const porTipo: Record<string, number> = {};
     Object.values(ETIQUETA_TIPO).forEach((t) => (porTipo[t] = 0));
     resultados.forEach((m) => {
@@ -214,17 +370,20 @@ export class ReportesService {
     ).length;
 
     // MTTR del periodo (correctivos + emergencias), en MINUTOS (req 2).
-    const dur = resultados
-      .filter(
+    const mttrMinutos = this.promedioMinutos(
+      resultados.filter(
         (m) =>
           m.tipoTrabajo === 'correctivo' ||
           m.tipoTrabajo === 'llamada_emergencia',
-      )
-      .map((m) => this.horasEntre(m.horaInicio, m.horaFin))
-      .filter((h): h is number => h !== null);
-    const mttrMinutos = dur.length
-      ? Math.round((dur.reduce((a, b) => a + b, 0) / dur.length) * 60)
-      : 0;
+      ),
+    );
+
+    // Tiempo medio de mantenimiento PREVENTIVO del periodo, en MINUTOS.
+    // Misma lógica y fuente que el Dashboard: la web, el Excel y el PDF lo toman
+    // de aquí, por lo que el valor es idéntico en las tres salidas.
+    const preventivoMinutos = this.promedioMinutos(
+      resultados.filter((m) => m.tipoTrabajo === 'preventivo'),
+    );
 
     // Costo total del periodo: suma de los costos históricos ya registrados en
     // cada mantenimiento (no se recalcula; req 9).
@@ -234,13 +393,19 @@ export class ReportesService {
           100,
       ) / 100;
 
+    // Serie diaria del periodo (para las gráficas de Reportes): usa el rango del
+    // filtro y, si no se indicó, el mínimo/máximo de fechas de los resultados.
+    const seriesDiarias = this.serieDiaria(resultados, f.desde, f.hasta);
+
     return {
       porTipo,
       equiposAtendidos,
       total: resultados.length,
       fueraDeServicio,
       mttrMinutos,
+      preventivoMinutos,
       costoTotal,
+      seriesDiarias,
     };
   }
 
@@ -293,6 +458,7 @@ export class ReportesService {
       ['Equipos atendidos', resumen.equiposAtendidos],
       ['Intervenciones que dejaron equipo fuera de servicio', resumen.fueraDeServicio],
       ['MTTR del periodo (min)', resumen.mttrMinutos],
+      ['Tiempo medio de mantenimiento preventivo (min)', resumen.preventivoMinutos],
       ['Costo total del periodo (Q)', resumen.costoTotal],
       ...Object.entries(resumen.porTipo).map(
         ([t, c]) => [`  · ${t}`, c] as [string, number],
@@ -364,6 +530,86 @@ export class ReportesService {
     };
     ws.views = [{ state: 'frozen', ySplit: inicioTabla }];
 
+    // -------- Hoja "Por día" (mismos datos que las gráficas de Reportes) --------
+    // Permite verificar que las gráficas coinciden con los datos del reporte.
+    const wsDia = wb.addWorksheet('Por dia', {
+      views: [{ state: 'frozen', ySplit: 2 }],
+    });
+    wsDia.mergeCells('A1:D1');
+    wsDia.getCell('A1').value = 'Detalle diario del periodo (costo y conteos)';
+    wsDia.getCell('A1').font = { bold: true, size: 12, color: { argb: A } };
+    const encDia = ['Dia', 'Costo (Q)', 'Llamadas de emergencia', 'Reparaciones'];
+    const hDia = wsDia.getRow(2);
+    encDia.forEach((h, i) => {
+      const c = hDia.getCell(i + 1);
+      c.value = h;
+      c.fill = fill(A);
+      c.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    });
+    (resumen.seriesDiarias || []).forEach((d, idx) => {
+      const r = wsDia.getRow(3 + idx);
+      r.getCell(1).value = d.fecha;
+      const cCosto = r.getCell(2);
+      cCosto.value = d.costo;
+      cCosto.numFmt = '"Q"#,##0.00';
+      cCosto.alignment = { horizontal: 'right' };
+      r.getCell(3).value = d.emergencias;
+      r.getCell(4).value = d.reparaciones;
+      if (idx % 2 === 1) for (let i = 1; i <= 4; i++) r.getCell(i).fill = fill('FFF4F7FB');
+    });
+    if (!resumen.seriesDiarias || resumen.seriesDiarias.length === 0) {
+      wsDia.getCell('A3').value = 'Sin datos en el periodo seleccionado.';
+    }
+    [14, 16, 26, 16].forEach((w, i) => (wsDia.getColumn(i + 1).width = w));
+
+    // Barras de datos (gráficas nativas de Excel dentro de la celda): cada
+    // columna numérica se convierte en un mini-gráfico de barras por día, con el
+    // mismo color que las gráficas de la aplicación.
+    const nDias = (resumen.seriesDiarias || []).length;
+    if (nDias > 0) {
+      const ultima = 2 + nDias; // datos: filas 3..(2+nDias)
+      const barra = (col: string, argb: string) =>
+        wsDia.addConditionalFormatting({
+          ref: `${col}3:${col}${ultima}`,
+          rules: [
+            {
+              type: 'dataBar',
+              gradient: false,
+              cfvo: [
+                { type: 'num', value: 0 },
+                { type: 'max' },
+              ],
+              color: { argb },
+            } as any,
+          ],
+        });
+      barra('B', 'FF1B4B8A'); // costo
+      barra('C', 'FFC0392B'); // llamadas de emergencia
+      barra('D', 'FFB7791F'); // reparaciones
+      // Encabezados con el color de cada gráfica (para identificarlas).
+      hDia.getCell(2).fill = fill('FF1B4B8A');
+      hDia.getCell(3).fill = fill('FFC0392B');
+      hDia.getCell(4).fill = fill('FFB7791F');
+    }
+
+    // -------- Hoja "Graficas": imágenes idénticas a las del PDF y la app --------
+    const imgs = generarImagenesGraficas((resumen.seriesDiarias || []) as any);
+    if (imgs) {
+      const wsG = wb.addWorksheet('Graficas');
+      wsG.getColumn(1).width = 2;
+      wsG.getCell('B1').value = 'Gráficas de actividad diaria del período';
+      wsG.getCell('B1').font = { bold: true, size: 12, color: { argb: A } };
+      const anchoPx = 620;
+      const altoPx = Math.round((anchoPx * 300) / 820); // conserva el aspecto 820×300
+      [imgs.costo, imgs.emergencias, imgs.reparaciones].forEach((buf, i) => {
+        const id = wb.addImage({ buffer: buf as any, extension: 'png' });
+        wsG.addImage(id, {
+          tl: { col: 1, row: 2 + i * 12 },
+          ext: { width: anchoPx, height: altoPx },
+        });
+      });
+    }
+
     return wb;
   }
 
@@ -418,20 +664,25 @@ export class ReportesService {
         { label: 'Equipos atendidos', val: String(resumen.equiposAtendidos) },
         { label: 'Fuera de servicio', val: String(resumen.fueraDeServicio) },
         { label: 'MTTR (min)', val: String(resumen.mttrMinutos) },
-        { label: 'Costo total', val: `Q${(resumen.costoTotal ?? 0).toFixed(2)}` },
+        { label: 'Prev. (min)', val: String(resumen.preventivoMinutos ?? 0) },
+        { label: 'Costo total', val: this.quetzales(resumen.costoTotal ?? 0) },
       ];
       const gap = 10;
+      const cardH = 50;
       const cardW = (contentW - gap * (tarjetas.length - 1)) / tarjetas.length;
       const cardY = doc.y;
       tarjetas.forEach((t, i) => {
         const x = left + i * (cardW + gap);
-        doc.roundedRect(x, cardY, cardW, 46, 6).fillAndStroke(GRIS_SUAVE, GRIS_BORDE);
-        doc.fillColor(AZUL).font('Helvetica-Bold').fontSize(18)
-          .text(t.val, x, cardY + 7, { width: cardW, align: 'center' });
+        doc.roundedRect(x, cardY, cardW, cardH, 6).fillAndStroke(GRIS_SUAVE, GRIS_BORDE);
+        // Fuente del valor adaptativa: los importes largos (p. ej. Q88,800.00)
+        // se reducen para no invadir la etiqueta ni desbordar la tarjeta.
+        const fsVal = t.val.length > 8 ? 12 : t.val.length > 5 ? 15 : 18;
+        doc.fillColor(AZUL).font('Helvetica-Bold').fontSize(fsVal)
+          .text(t.val, x + 3, cardY + 9, { width: cardW - 6, align: 'center' });
         doc.fillColor('#555').font('Helvetica').fontSize(8)
-          .text(t.label, x, cardY + 30, { width: cardW, align: 'center' });
+          .text(t.label, x + 3, cardY + 34, { width: cardW - 6, align: 'center' });
       });
-      doc.y = cardY + 46 + 14;
+      doc.y = cardY + cardH + 14;
 
       // ---------- Distribucion por tipo ----------
       doc.fillColor(AZUL_OSCURO).font('Helvetica-Bold').fontSize(11)
@@ -448,6 +699,57 @@ export class ReportesService {
         chipX += w + 8;
       });
       doc.y += 26;
+
+      // ---------- Gráficas diarias del período ----------
+      // Costo, llamadas de emergencia y reparaciones por día. Se incrustan como
+      // IMÁGENES (idénticas a las del Excel y a la app). Si no se pueden generar
+      // las imágenes, se dibuja un respaldo vectorial equivalente.
+      const serie = resumen.seriesDiarias || [];
+      if (serie.length) {
+        const imgs = generarImagenesGraficas(serie as any);
+        // Salto de página si no cabe el encabezado + al menos una gráfica.
+        const altoImg = (contentW * 300) / 820; // aspecto 820×300
+        const primerBloque = imgs ? altoImg + 10 : 93;
+        if (doc.y + 20 + primerBloque > bottomLimit) {
+          doc.addPage();
+          doc.y = doc.page.margins.top;
+        }
+        doc.fillColor(AZUL_OSCURO).font('Helvetica-Bold').fontSize(11)
+          .text('Actividad diaria del período', left, doc.y);
+        doc.moveDown(0.3);
+
+        if (imgs) {
+          [imgs.costo, imgs.emergencias, imgs.reparaciones].forEach((buf) => {
+            if (doc.y + altoImg + 8 > bottomLimit) {
+              doc.addPage();
+              doc.y = doc.page.margins.top;
+            }
+            doc.image(buf, left, doc.y, { width: contentW });
+            doc.y += altoImg + 8;
+          });
+        } else {
+          const chartH = 56;
+          const bloque = 15 + chartH + 22;
+          let cy = doc.y;
+          const graficas = [
+            { titulo: 'Costo por día', campo: 'costo', color: AZUL, ejeY: 'Costo (Q)', moneda: true },
+            { titulo: 'Llamadas de emergencia por día', campo: 'emergencias', color: ROJO, ejeY: 'N.º de llamadas' },
+            { titulo: 'Reparaciones por día', campo: 'reparaciones', color: AMBAR, ejeY: 'N.º de reparaciones' },
+          ];
+          graficas.forEach((g) => {
+            if (cy + bloque > bottomLimit) {
+              doc.addPage();
+              cy = doc.page.margins.top;
+            }
+            cy = this.dibujarGraficaBarras(doc, {
+              x: left, y: cy, w: contentW, h: chartH,
+              titulo: g.titulo, datos: serie, campo: g.campo,
+              color: g.color, ejeY: g.ejeY, moneda: g.moneda,
+            });
+          });
+          doc.y = cy + 6;
+        }
+      }
 
       // ---------- Tabla de detalle ----------
       const cols = [
@@ -473,6 +775,11 @@ export class ReportesService {
         doc.y = y + 20;
       };
 
+      // Evita que el título del detalle quede al pie de la página tras las gráficas.
+      if (doc.y + 60 > bottomLimit) {
+        doc.addPage();
+        doc.y = doc.page.margins.top;
+      }
       doc.fillColor(AZUL_OSCURO).font('Helvetica-Bold').fontSize(11)
         .text('Detalle de mantenimientos', left, doc.y);
       doc.moveDown(0.3);

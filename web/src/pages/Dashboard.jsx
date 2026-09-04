@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { reportesApi } from '../api/services';
 import { mensajeError } from '../api/client';
 import { TIPO_MANT_LABEL } from '../data/constants';
 import EstadoBadge from '../components/EstadoBadge';
+import GraficasDiarias from '../components/GraficasDiarias';
 
 // Panel de indicadores (RF08). Calculado en el backend a partir de datos reales.
 const COLOR_TIPO = {
@@ -16,13 +17,35 @@ export default function Dashboard() {
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
   const [cargando, setCargando] = useState(true);
+  const [refrescando, setRefrescando] = useState(false);
+  const [actualizado, setActualizado] = useState(null);
 
-  useEffect(() => {
-    reportesApi.indicadores()
-      .then(setData)
+  // Carga (o recarga) los indicadores. `silencioso` recarga sin mostrar el
+  // spinner de página completa (para actualizaciones en segundo plano).
+  const cargar = useCallback((silencioso = false) => {
+    if (silencioso) setRefrescando(true); else setCargando(true);
+    return reportesApi.indicadores()
+      .then((d) => { setData(d); setActualizado(new Date()); setError(''); })
       .catch((e) => setError(mensajeError(e, 'No se pudieron cargar los indicadores.')))
-      .finally(() => setCargando(false));
+      .finally(() => { setCargando(false); setRefrescando(false); });
   }, []);
+
+  useEffect(() => { cargar(); }, [cargar]);
+
+  // Reactualiza al volver a la ventana/pestaña del panel (p. ej. después de
+  // registrar un mantenimiento en otra pestaña), para que las gráficas y los
+  // indicadores reflejen los datos nuevos sin recargar la página completa.
+  useEffect(() => {
+    const alVolver = () => {
+      if (document.visibilityState === 'visible') cargar(true);
+    };
+    window.addEventListener('focus', alVolver);
+    document.addEventListener('visibilitychange', alVolver);
+    return () => {
+      window.removeEventListener('focus', alVolver);
+      document.removeEventListener('visibilitychange', alVolver);
+    };
+  }, [cargar]);
 
   const mesActual = new Date().toLocaleDateString('es-GT', { month: 'long', year: 'numeric' });
 
@@ -46,7 +69,19 @@ export default function Dashboard() {
     <>
       <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-1">
         <h1 className="titulo-pantalla mb-0">Panel de indicadores</h1>
-        <span className="texto-auxiliar text-capitalize"><i className="bi bi-calendar3 me-1" />{mesActual}</span>
+        <div className="d-flex align-items-center flex-wrap gap-2">
+          {actualizado && (
+            <span className="texto-auxiliar" style={{ fontSize: 12 }}>
+              Actualizado {actualizado.toLocaleTimeString('es-GT')}
+            </span>
+          )}
+          <button className="btn btn-sm btn-outline-secondary" onClick={() => cargar(true)} disabled={refrescando || cargando}>
+            {refrescando
+              ? <><span className="spinner-border spinner-border-sm me-1" />Actualizando…</>
+              : <><i className="bi bi-arrow-clockwise me-1" />Actualizar</>}
+          </button>
+          <span className="texto-auxiliar text-capitalize"><i className="bi bi-calendar3 me-1" />{mesActual}</span>
+        </div>
       </div>
       <p className="texto-auxiliar mb-4">Resumen del estado del mantenimiento en el mes en curso.</p>
 
@@ -64,6 +99,11 @@ export default function Dashboard() {
             </div>
           </div>
         ))}
+      </div>
+
+      {/* Gráficas diarias del mes en curso (costo, emergencias y reparaciones). */}
+      <div className="mb-4">
+        <GraficasDiarias series={data.seriesDiarias || []} periodoLabel={mesActual} />
       </div>
 
       <div className="row g-3">

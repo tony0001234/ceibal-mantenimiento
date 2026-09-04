@@ -5,6 +5,7 @@ import {
   TIPOS_MANTENIMIENTO, TIPO_MANT_LABEL, hoyISO, ordenarEquipos, etiquetaEquipo, fmtQ,
 } from '../data/constants';
 import EstadoBadge from '../components/EstadoBadge';
+import GraficasDiarias from '../components/GraficasDiarias';
 
 // Generacion de reportes (RF07): mantenimientos e inventario de equipos en alta.
 export default function Reportes() {
@@ -167,12 +168,18 @@ export default function Reportes() {
                   : (equipoFiltro ? `${equipoFiltro.codigoInventario} — ${equipoFiltro.nombre}` : 'Todos')} ·{' '}
                 Tipo: {filtros.tipoTrabajo ? TIPO_MANT_LABEL[filtros.tipoTrabajo] : 'Todos'}
               </div>
-              <div className="row g-2 mb-3">
-                <div className="col-12"><strong style={{ fontSize: '14px' }}>Resumen del período</strong></div>
-                <div className="col-6 col-md-3"><div className="border rounded p-2 text-center"><div className="fw-bold fs-5">{data.resumen.total}</div><div className="texto-auxiliar">Mantenimientos</div></div></div>
-                <div className="col-6 col-md-3"><div className="border rounded p-2 text-center"><div className="fw-bold fs-5">{data.resumen.equiposAtendidos}</div><div className="texto-auxiliar">Equipos atendidos</div></div></div>
-                <div className="col-6 col-md-3"><div className="border rounded p-2 text-center"><div className="fw-bold fs-5">{data.resumen.mttrMinutos ?? 0} min</div><div className="texto-auxiliar">MTTR</div></div></div>
-                <div className="col-6 col-md-3"><div className="border rounded p-2 text-center"><div className="fw-bold fs-5">{fmtQ(data.resumen.costoTotal ?? 0)}</div><div className="texto-auxiliar">Costo total</div></div></div>
+              <div className="mb-2"><strong style={{ fontSize: '14px' }}>Resumen del período</strong></div>
+              <div className="row row-cols-2 row-cols-md-3 row-cols-lg-5 g-2 mb-3">
+                <div className="col"><div className="border rounded p-2 text-center h-100"><div className="fw-bold fs-5">{data.resumen.total}</div><div className="texto-auxiliar">Mantenimientos</div></div></div>
+                <div className="col"><div className="border rounded p-2 text-center h-100"><div className="fw-bold fs-5">{data.resumen.equiposAtendidos}</div><div className="texto-auxiliar">Equipos atendidos</div></div></div>
+                <div className="col"><div className="border rounded p-2 text-center h-100"><div className="fw-bold fs-5">{data.resumen.mttrMinutos ?? 0} min</div><div className="texto-auxiliar">MTTR</div></div></div>
+                <div className="col"><div className="border rounded p-2 text-center h-100"><div className="fw-bold fs-5">{data.resumen.preventivoMinutos ?? 0} min</div><div className="texto-auxiliar">Tiempo prev.</div></div></div>
+                <div className="col"><div className="border rounded p-2 text-center h-100"><div className="fw-bold fs-5">{fmtQ(data.resumen.costoTotal ?? 0)}</div><div className="texto-auxiliar">Costo total</div></div></div>
+              </div>
+
+              {/* Gráficas diarias del período consultado. */}
+              <div className="mb-4">
+                <GraficasDiarias series={data.resumen.seriesDiarias || []} periodoLabel={`${filtros.desde} a ${filtros.hasta}`} />
               </div>
               <strong style={{ fontSize: '14px' }}>Detalle de mantenimientos</strong>
               <div className="table-responsive mt-1 mb-3">
