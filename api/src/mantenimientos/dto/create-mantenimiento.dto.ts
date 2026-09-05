@@ -4,9 +4,11 @@ import {
   IsEnum,
   IsMongoId,
   IsNotEmpty,
+  IsNumber,
   IsOptional,
   IsString,
   Matches,
+  Min,
 } from 'class-validator';
 
 const HORA = /^([01]\d|2[0-3]):([0-5]\d)$/;
@@ -53,4 +55,11 @@ export class CreateMantenimientoDto {
   @IsOptional()
   @IsBoolean()
   confirmarDuplicado?: boolean;
+
+  // Precio ingresado manualmente. SOLO se usa cuando el tipo es "correctivo"
+  // (el servidor lo ignora para los demás tipos y para el periodo "garantía").
+  @IsOptional()
+  @IsNumber({}, { message: 'El precio del mantenimiento correctivo debe ser numérico.' })
+  @Min(0, { message: 'El precio no puede ser negativo.' })
+  costoManual?: number;
 }

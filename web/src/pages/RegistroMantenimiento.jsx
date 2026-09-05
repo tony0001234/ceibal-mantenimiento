@@ -4,7 +4,7 @@ import { equiposApi, mantenimientosApi, catalogosApi, costosApi } from '../api/s
 import { mensajeError } from '../api/client';
 import {
   TIPOS_MANTENIMIENTO, PERIODOS, ESTADOS_RESULTANTE, TIPO_MANT_LABEL, hoyISO,
-  ESTADOS_EQUIPO, fmtQ,
+  ESTADOS_EQUIPO, fmtQ, modoPrecio,
 } from '../data/constants';
 import EstadoBadge from '../components/EstadoBadge';
 
@@ -30,6 +30,15 @@ export default function RegistroMantenimiento() {
   const [historial, setHistorial] = useState([]);
   const [duplicado, setDuplicado] = useState(null);
   const [costoVigente, setCostoVigente] = useState(null); // costo (automático) del equipo
+  const [precioManual, setPrecioManual] = useState(''); // precio del correctivo (manual)
+
+  // Regla de precio según el tipo y el periodo (misma que el backend).
+  const modo = modoPrecio(form.tipoTrabajo, form.periodo);
+  const precioManualValido =
+    precioManual !== '' && Number.isFinite(Number(precioManual)) && Number(precioManual) >= 0;
+
+  // Al cambiar a un tipo/periodo sin precio manual, no conservar un precio previo.
+  useEffect(() => { if (modo !== 'manual') setPrecioManual(''); }, [modo]);
 
   // --- Selector de equipo (modal con filtros) ---
   const [picker, setPicker] = useState(false);
@@ -124,9 +133,11 @@ export default function RegistroMantenimiento() {
     horaInicio: tocado && !form.horaInicio,
     horaFin: tocado && !form.horaFin,
     descripcion: tocado && !form.descripcion.trim(),
+    precio: tocado && modo === 'manual' && !precioManualValido,
   };
   const incompleto = !form.equipoId || !form.tipoTrabajo
-    || !form.periodo || !form.horaInicio || !form.horaFin || !form.descripcion.trim();
+    || !form.periodo || !form.horaInicio || !form.horaFin || !form.descripcion.trim()
+    || (modo === 'manual' && !precioManualValido);
 
   const set = (k, v) => { setForm({ ...form, [k]: v }); setGuardado(false); };
 
@@ -146,6 +157,8 @@ export default function RegistroMantenimiento() {
         fechaMantenimiento: form.fecha,
         horaInicio: form.horaInicio,
         horaFin: form.horaFin,
+        // Precio manual solo para correctivo (el backend lo ignora en otros casos).
+        costoManual: modo === 'manual' ? Number(precioManual) : undefined,
         confirmarDuplicado: confirmarDuplicado || undefined,
       });
       setGuardado(true);
@@ -167,6 +180,7 @@ export default function RegistroMantenimiento() {
   const limpiar = (conservarMsg) => {
     setForm(VACIO);
     setEquipoSel(null);
+    setPrecioManual('');
     setTocado(false);
     setDuplicado(null);
     if (!conservarMsg) setGuardado(false);
@@ -215,11 +229,6 @@ export default function RegistroMantenimiento() {
                         <div className="texto-auxiliar" style={{ fontSize: '13px' }}>
                           <i className="bi bi-geo-alt me-1" />{equipoSel.ubicacion} · <EstadoBadge estado={equipoSel.estado} />
                         </div>
-                        <div className="texto-auxiliar" style={{ fontSize: '13px' }}>
-                          <i className="bi bi-cash-coin me-1" />Costo del mantenimiento:{' '}
-                          <strong>{costoVigente != null ? fmtQ(costoVigente) : '—'}</strong>
-                          <span className="ms-1">(automático, no editable)</span>
-                        </div>
                       </div>
                       <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => setPicker(true)}>
                         <i className="bi bi-arrow-repeat me-1" />Cambiar
@@ -251,6 +260,38 @@ export default function RegistroMantenimiento() {
                 </select>
                 {faltan.periodo && <div className="invalid-feedback">Seleccione el periodo.</div>}
               </div>
+
+              {/* Precio del mantenimiento: dinámico según el tipo/periodo. */}
+              {form.tipoTrabajo && (
+                <div className="mb-3">
+                  <label className="form-label">Precio del mantenimiento</label>
+                  {modo === 'automatico' && (
+                    <div className="border rounded p-2 d-flex align-items-center" style={{ background: 'var(--ceibal-azul-050, #f3f7fb)' }}>
+                      <i className="bi bi-cash-coin me-2" style={{ color: 'var(--ceibal-azul-600)' }} />
+                      <strong className="me-2">{costoVigente != null ? fmtQ(costoVigente) : '—'}</strong>
+                      <span className="texto-auxiliar" style={{ fontSize: '13px' }}>automático, según la categoría del equipo (no editable)</span>
+                    </div>
+                  )}
+                  {modo === 'manual' && (
+                    <>
+                      <div className="input-group">
+                        <span className="input-group-text">Q</span>
+                        <input type="number" min="0" step="0.01" inputMode="decimal"
+                          className={`form-control ${faltan.precio ? 'is-invalid' : ''}`}
+                          placeholder="Ingrese el precio del correctivo"
+                          value={precioManual} onChange={(e) => { setPrecioManual(e.target.value); setGuardado(false); }} />
+                      </div>
+                      {faltan.precio && <div className="text-danger mt-1" style={{ fontSize: '.85rem' }}>Ingrese el precio del mantenimiento correctivo.</div>}
+                      <div className="form-text">Precio específico ingresado manualmente para el mantenimiento correctivo.</div>
+                    </>
+                  )}
+                  {modo === 'ninguno' && (
+                    <div className="texto-auxiliar" style={{ fontSize: '13px' }}>
+                      <i className="bi bi-dash-circle me-1" />Este tipo de mantenimiento no lleva precio.
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="mb-3">
                 <label className="form-label">Empresa afiliada <span className="texto-auxiliar">(automático)</span></label>

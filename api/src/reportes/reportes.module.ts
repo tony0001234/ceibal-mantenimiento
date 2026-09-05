@@ -7,12 +7,14 @@ import {
   MantenimientoSchema,
 } from '../mantenimientos/schemas/mantenimiento.schema';
 import { Equipo, EquipoSchema } from '../equipos/schemas/equipo.schema';
+import { Catalogo, CatalogoSchema } from '../catalogos/schemas/catalogo.schema';
 
 @Module({
   imports: [
     MongooseModule.forFeature([
       { name: Mantenimiento.name, schema: MantenimientoSchema },
       { name: Equipo.name, schema: EquipoSchema },
+      { name: Catalogo.name, schema: CatalogoSchema },
     ]),
   ],
   controllers: [ReportesController],

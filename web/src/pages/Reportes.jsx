@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { equiposApi, reportesApi } from '../api/services';
 import { mensajeError } from '../api/client';
 import {
-  TIPOS_MANTENIMIENTO, TIPO_MANT_LABEL, hoyISO, ordenarEquipos, etiquetaEquipo, fmtQ,
+  TIPOS_MANTENIMIENTO, TIPO_MANT_LABEL, hoyISO, ordenarEquipos, etiquetaEquipo, fmtQ, precioAplica,
 } from '../data/constants';
 import EstadoBadge from '../components/EstadoBadge';
 import GraficasDiarias from '../components/GraficasDiarias';
@@ -194,7 +194,7 @@ export default function Reportes() {
                         <td>{TIPO_MANT_LABEL[m.tipoTrabajo] || m.tipoTrabajo}</td>
                         <td>{m.tecnico?.nombre || '—'}</td>
                         <td>{m.empresa?.nombre || '—'}</td>
-                        <td className="text-end">{fmtQ(m.costoMantenimiento ?? 0)}</td>
+                        <td className="text-end">{precioAplica(m.tipoTrabajo, m.periodo) ? fmtQ(m.costoMantenimiento ?? 0) : '—'}</td>
                         <td><EstadoBadge estado={m.estadoEquipoResultante} /></td>
                       </tr>
                     ))}

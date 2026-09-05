@@ -21,6 +21,8 @@ export const mantenimientosApi = {
   listar: (params = {}) =>
     api.get('/mantenimientos', { params }).then((r) => r.data),
   crear: (dto) => api.post('/mantenimientos', dto).then((r) => r.data),
+  actualizar: (id, dto) =>
+    api.patch(`/mantenimientos/${id}`, dto).then((r) => r.data),
   verificarDuplicado: (equipo, fecha) =>
     api
       .get('/mantenimientos/duplicado', { params: { equipo, fecha } })

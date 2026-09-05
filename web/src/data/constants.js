@@ -147,6 +147,19 @@ export const fmtQ = (n) =>
   new Intl.NumberFormat('es-GT', { style: 'currency', currency: 'GTQ', minimumFractionDigits: 2 })
     .format(Number(n) || 0);
 
+// ---------- Regla de precio del mantenimiento (debe coincidir con el backend) ----------
+// Preventivo -> automático (config. de costos); Correctivo -> manual (lo ingresa
+// el usuario); Emergencia / Evaluación interna / periodo "garantía" -> sin precio.
+export const modoPrecio = (tipoTrabajo, periodo) => {
+  if (periodo === 'garantia') return 'ninguno';
+  if (tipoTrabajo === 'preventivo') return 'automatico';
+  if (tipoTrabajo === 'correctivo') return 'manual';
+  return 'ninguno';
+};
+// ¿Corresponde mostrar/almacenar un precio para este mantenimiento?
+export const precioAplica = (tipoTrabajo, periodo) =>
+  modoPrecio(tipoTrabajo, periodo) !== 'ninguno';
+
 export const hoyISO = () => new Date().toISOString().slice(0, 10);
 
 // ---------- Ayudas para los desplegables de equipos ----------

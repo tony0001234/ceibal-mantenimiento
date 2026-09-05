@@ -2,6 +2,8 @@ import {
   Body,
   Controller,
   Get,
+  Param,
+  Patch,
   Post,
   Query,
   UseGuards,
@@ -9,8 +11,10 @@ import {
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { MantenimientosService } from './mantenimientos.service';
 import { CreateMantenimientoDto } from './dto/create-mantenimiento.dto';
+import { UpdateMantenimientoDto } from './dto/update-mantenimiento.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
+import { Roles } from '../common/decorators/roles.decorator';
 import { UsuarioActual } from '../common/decorators/usuario-actual.decorator';
 
 // Bitacora digital de mantenimiento (RF03-RF06).
@@ -38,6 +42,14 @@ export class MantenimientosController {
     @Query('desde') desde?: string,
     @Query('hasta') hasta?: string,
     @Query('limite') limite?: string,
+    // Filtros por atributos del equipo (mismos que la pestaña Equipos).
+    @Query('buscar') buscar?: string,
+    @Query('tipoEquipo') tipoEquipo?: string,
+    @Query('subTipo') subTipo?: string,
+    @Query('marca') marca?: string,
+    @Query('estado') estado?: string,
+    @Query('ubicacion') ubicacion?: string,
+    @Query('categoria') categoria?: string,
   ) {
     return this.mantenimientosService.findAll({
       equipo,
@@ -45,7 +57,21 @@ export class MantenimientosController {
       desde,
       hasta,
       limite: limite ? Number(limite) : undefined,
+      buscar,
+      tipoEquipo,
+      subTipo,
+      marca,
+      estado,
+      ubicacion,
+      categoria,
     });
+  }
+
+  // Edición de un registro histórico (RF06). Solo administrador y supervisor.
+  @Roles('administrador', 'supervisor')
+  @Patch(':id')
+  update(@Param('id') id: string, @Body() dto: UpdateMantenimientoDto) {
+    return this.mantenimientosService.update(id, dto);
   }
 
   // RF05: verificacion de posible duplicado (usada en vivo por el formulario).

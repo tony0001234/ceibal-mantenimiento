@@ -106,6 +106,34 @@ export default function Dashboard() {
         <GraficasDiarias series={data.seriesDiarias || []} periodoLabel={mesActual} />
       </div>
 
+      {/* Avance de mantenimiento por periodicidad (dinámico desde la BD). */}
+      <div className="card mb-4">
+        <div className="card-header titulo-seccion py-2">Equipos por periodicidad de mantenimiento</div>
+        <div className="card-body">
+          <p className="texto-auxiliar mb-3" style={{ fontSize: 13 }}>
+            Avance del mes por periodicidad: equipos con mantenimiento realizado sobre el total de equipos de cada periodicidad.
+          </p>
+          {(data.periodicidades || []).length === 0 && (
+            <div className="texto-auxiliar text-center py-3">Aún no hay equipos con periodicidad asignada.</div>
+          )}
+          {(data.periodicidades || []).map((p) => (
+            <div className="mb-3" key={p.categoria}>
+              <div className="d-flex justify-content-between align-items-center mb-1 flex-wrap gap-1">
+                <span style={{ fontSize: 14 }}>{p.label}</span>
+                <span className="texto-auxiliar" style={{ fontSize: 13 }}>
+                  <strong>{p.conMantenimiento}</strong>/{p.total} equipos ·{' '}
+                  <strong style={{ color: 'var(--ceibal-azul-600)' }}>{p.porcentaje}%</strong>
+                </span>
+              </div>
+              <div className="progress" style={{ height: 10 }} role="progressbar"
+                aria-label={p.label} aria-valuenow={p.porcentaje} aria-valuemin={0} aria-valuemax={100}>
+                <div className="progress-bar" style={{ width: `${p.porcentaje}%`, background: 'var(--ceibal-azul-600)' }} />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
       <div className="row g-3">
         <div className="col-12 col-lg-6">
           <div className="card h-100">

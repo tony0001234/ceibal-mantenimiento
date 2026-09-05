@@ -7,8 +7,25 @@ import {
   Mantenimiento,
   MantenimientoDocument,
 } from '../mantenimientos/schemas/mantenimiento.schema';
-import { Equipo, EquipoDocument } from '../equipos/schemas/equipo.schema';
+import {
+  Equipo,
+  EquipoDocument,
+  CATEGORIAS_MANTENIMIENTO,
+} from '../equipos/schemas/equipo.schema';
+import {
+  Catalogo,
+  CatalogoDocument,
+} from '../catalogos/schemas/catalogo.schema';
+import { precioAplica } from '../mantenimientos/precio.util';
 import { generarImagenesGraficas } from './graficas.util';
+
+// Etiqueta legible de una categoría / periodicidad de mantenimiento. Para las
+// categorías fijas usa su etiqueta; para las creadas por el usuario, el valor.
+const CATEGORIA_LABEL: Record<string, string> = Object.fromEntries(
+  CATEGORIAS_MANTENIMIENTO.map((c) => [c.valor, c.label]),
+);
+const etiquetaCategoria = (valor: string): string =>
+  CATEGORIA_LABEL[valor] || valor;
 
 const ETIQUETA_TIPO: Record<string, string> = {
   preventivo: 'Preventivo',
@@ -61,7 +78,17 @@ export class ReportesService {
     @InjectModel(Mantenimiento.name)
     private mantenimientoModel: Model<MantenimientoDocument>,
     @InjectModel(Equipo.name) private equipoModel: Model<EquipoDocument>,
+    @InjectModel(Catalogo.name) private catalogoModel: Model<CatalogoDocument>,
   ) {}
+
+  // Costo APLICABLE de un mantenimiento para reportes: 0 si el tipo/periodo no
+  // lleva precio (emergencia, evaluación interna o garantía). Así la pantalla,
+  // el PDF y el Excel muestran el precio solo cuando corresponde.
+  private costoAplicable(m: any): number {
+    return precioAplica(m.tipoTrabajo, m.periodo)
+      ? Number(m.costoMantenimiento) || 0
+      : 0;
+  }
 
   private horasEntre(hi?: Date, hf?: Date): number | null {
     if (!hi || !hf) return null;
@@ -152,7 +179,7 @@ export class ReportesService {
     for (const m of mants) {
       const i = indice.get(this.fechaCorta(m.fechaMantenimiento));
       if (i === undefined) continue;
-      dias[i].costo += Number(m.costoMantenimiento) || 0;
+      dias[i].costo += this.costoAplicable(m);
       if (m.tipoTrabajo === 'llamada_emergencia') dias[i].emergencias += 1;
       if (m.tipoTrabajo === 'correctivo') dias[i].reparaciones += 1;
     }
@@ -324,6 +351,11 @@ export class ReportesService {
       ])
       .exec();
 
+    // Avance de mantenimiento por periodicidad (categoría de cada equipo).
+    // Dinámico: agrupa los equipos activos por su categoría/periodicidad y
+    // cuenta cuántos ya tienen un mantenimiento en el mes en curso.
+    const periodicidades = await this.avancePorPeriodicidad(mantsMes as any);
+
     return {
       equiposRegistrados,
       equiposFuera,
@@ -333,8 +365,73 @@ export class ReportesService {
       emergenciasMes,
       distribucionTipo,
       seriesDiarias,
+      periodicidades,
       ultimos,
     };
+  }
+
+  // Calcula, por cada periodicidad (categoría del equipo), el total de equipos
+  // y cuántos ya tienen mantenimiento en el mes en curso, con su porcentaje.
+  // Incluye periodicidades fijas y las creadas en el catálogo aunque tengan 0
+  // equipos (aparecen automáticamente). Controla el caso total = 0.
+  private async avancePorPeriodicidad(
+    mantsMes: any[],
+  ): Promise<
+    {
+      categoria: string;
+      label: string;
+      total: number;
+      conMantenimiento: number;
+      porcentaje: number;
+    }[]
+  > {
+    // Equipos activos (no dados de baja) con periodicidad asignada.
+    const equipos: any[] = await this.equipoModel
+      .find({ estado: { $ne: 'BAJA' }, categoria: { $nin: ['', null] } })
+      .select('_id categoria')
+      .lean()
+      .exec();
+
+    // Ids de equipos con al menos un mantenimiento en el mes en curso.
+    const idsConMant = new Set(
+      mantsMes.map((m) => String(m.equipo?._id ?? m.equipo)),
+    );
+
+    const agg = new Map<string, { total: number; conMant: number }>();
+    for (const e of equipos) {
+      const cat = e.categoria;
+      const r = agg.get(cat) || { total: 0, conMant: 0 };
+      r.total += 1;
+      if (idsConMant.has(String(e._id))) r.conMant += 1;
+      agg.set(cat, r);
+    }
+
+    // Universo de periodicidades: fijas + catálogo + las presentes en equipos.
+    const catDocs: any[] = await this.catalogoModel
+      .find({ tipo: 'categoria', activo: true })
+      .select('valor')
+      .lean()
+      .exec();
+    const universo = new Set<string>([
+      ...CATEGORIAS_MANTENIMIENTO.map((c) => c.valor),
+      ...catDocs.map((d) => (d.valor || '').trim()).filter(Boolean),
+      ...agg.keys(),
+    ]);
+
+    return [...universo]
+      .map((cat) => {
+        const r = agg.get(cat) || { total: 0, conMant: 0 };
+        const porcentaje =
+          r.total > 0 ? Math.round((r.conMant / r.total) * 100) : 0;
+        return {
+          categoria: cat,
+          label: etiquetaCategoria(cat),
+          total: r.total,
+          conMantenimiento: r.conMant,
+          porcentaje,
+        };
+      })
+      .sort((a, b) => b.total - a.total || a.label.localeCompare(b.label));
   }
 
   // ---------- Vista previa del reporte (RF07) ----------
@@ -385,12 +482,12 @@ export class ReportesService {
       resultados.filter((m) => m.tipoTrabajo === 'preventivo'),
     );
 
-    // Costo total del periodo: suma de los costos históricos ya registrados en
-    // cada mantenimiento (no se recalcula; req 9).
+    // Costo total del periodo: suma de los costos APLICABLES (preventivo y
+    // correctivo). Emergencias, evaluaciones internas y trabajos en garantía no
+    // suman porque no llevan precio.
     const costoTotal =
       Math.round(
-        resultados.reduce((a, m) => a + (Number(m.costoMantenimiento) || 0), 0) *
-          100,
+        resultados.reduce((a, m) => a + this.costoAplicable(m), 0) * 100,
       ) / 100;
 
     // Serie diaria del periodo (para las gráficas de Reportes): usa el rango del
@@ -508,8 +605,13 @@ export class ReportesService {
         },
       };
       const cCosto = r.getCell(10);
-      cCosto.value = Number(m.costoMantenimiento) || 0;
-      cCosto.numFmt = '"Q"#,##0.00';
+      // Precio solo cuando corresponde (preventivo/correctivo, no en garantía).
+      if (precioAplica(m.tipoTrabajo, m.periodo)) {
+        cCosto.value = Number(m.costoMantenimiento) || 0;
+        cCosto.numFmt = '"Q"#,##0.00';
+      } else {
+        cCosto.value = '—';
+      }
       cCosto.alignment = { horizontal: 'right' };
       if (idx % 2 === 1) {
         for (let i = 1; i <= 10; i++) r.getCell(i).fill = fill('FFF4F7FB');
@@ -798,7 +900,9 @@ export class ReportesService {
           tipo: ETIQUETA_TIPO[m.tipoTrabajo] || m.tipoTrabajo,
           tecnico: m.tecnico?.nombre || '—',
           empresa: m.empresa?.nombre || '—',
-          costo: `Q${(Number(m.costoMantenimiento) || 0).toFixed(2)}`,
+          costo: precioAplica(m.tipoTrabajo, m.periodo)
+            ? this.quetzales(Number(m.costoMantenimiento) || 0)
+            : '—',
           estado: ETIQUETA_ESTADO[m.estadoEquipoResultante] || m.estadoEquipoResultante,
         };
         // Altura de fila segun el contenido mas alto
