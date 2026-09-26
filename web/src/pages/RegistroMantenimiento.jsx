@@ -1,10 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { equiposApi, mantenimientosApi, catalogosApi, costosApi } from '../api/services';
 import { mensajeError } from '../api/client';
 import {
   TIPOS_MANTENIMIENTO, PERIODOS, ESTADOS_RESULTANTE, TIPO_MANT_LABEL, hoyISO,
-  ESTADOS_EQUIPO, fmtQ, modoPrecio,
+  ESTADOS_EQUIPO, fmtQ, modoPrecio, combinarCategorias, categoriaCorta,
 } from '../data/constants';
 import EstadoBadge from '../components/EstadoBadge';
 
@@ -48,12 +48,14 @@ export default function RegistroMantenimiento() {
   const [fMarca, setFMarca] = useState('');
   const [fUbic, setFUbic] = useState('');
   const [fEstado, setFEstado] = useState('');
+  const [fCategoria, setFCategoria] = useState('');
   const [resultados, setResultados] = useState([]);
   const [buscando, setBuscando] = useState(false);
   const [tiposEquipo, setTiposEquipo] = useState([]);
   const [subtipos, setSubtipos] = useState([]); // {valor, padre}
   const [marcas, setMarcas] = useState([]);
   const [ubicaciones, setUbicaciones] = useState([]);
+  const [catCategorias, setCatCategorias] = useState([]); // categorías del catálogo (extensibles)
 
   // Catálogos para los desplegables de filtro (una sola vez).
   useEffect(() => {
@@ -61,7 +63,11 @@ export default function RegistroMantenimiento() {
     catalogosApi.listar('subTipo').then((d) => setSubtipos((d || []).map((x) => ({ valor: x.valor, padre: x.padre })))).catch(() => {});
     catalogosApi.listar('marca').then((d) => setMarcas((d || []).map((x) => x.valor))).catch(() => {});
     catalogosApi.listar('ubicacion').then((d) => setUbicaciones((d || []).map((x) => x.valor))).catch(() => {});
+    catalogosApi.listar('categoria').then((d) => setCatCategorias(d || [])).catch(() => {});
   }, []);
+
+  // Periodicidades de mantenimiento disponibles = fijas + las creadas desde Costos.
+  const categorias = useMemo(() => combinarCategorias(catCategorias), [catCategorias]);
 
   const subtiposDisponibles = subtipos
     .filter((s) => !fTipo || s.padre === fTipo)
@@ -79,18 +85,19 @@ export default function RegistroMantenimiento() {
       if (fMarca) params.marca = fMarca;
       if (fUbic) params.ubicacion = fUbic;
       if (fEstado) params.estado = fEstado;
+      if (fCategoria) params.categoria = fCategoria;
       equiposApi.listar(params)
         .then((data) => setResultados(data || []))
         .catch(() => setResultados([]))
         .finally(() => setBuscando(false));
     }, 300);
     return () => clearTimeout(t);
-  }, [picker, fBuscar, fTipo, fSubtipo, fMarca, fUbic, fEstado]);
+  }, [picker, fBuscar, fTipo, fSubtipo, fMarca, fUbic, fEstado, fCategoria]);
 
   const limpiarFiltros = () => {
-    setFBuscar(''); setFTipo(''); setFSubtipo(''); setFMarca(''); setFUbic(''); setFEstado('');
+    setFBuscar(''); setFTipo(''); setFSubtipo(''); setFMarca(''); setFUbic(''); setFEstado(''); setFCategoria('');
   };
-  const hayFiltros = fBuscar || fTipo || fSubtipo || fMarca || fUbic || fEstado;
+  const hayFiltros = fBuscar || fTipo || fSubtipo || fMarca || fUbic || fEstado || fCategoria;
 
   const seleccionarEquipo = (eq) => {
     setEquipoSel(eq);
@@ -468,7 +475,14 @@ export default function RegistroMantenimiento() {
                       {ubicaciones.map((u) => <option key={u} value={u}>{u}</option>)}
                     </select>
                   </div>
-                  <div className="col-12 col-md-8 text-end">
+                  <div className="col-12 col-md-4">
+                    <label className="form-label">Periodicidad de mantenimiento</label>
+                    <select className="form-select form-select-sm" value={fCategoria} onChange={(e) => setFCategoria(e.target.value)}>
+                      <option value="">Todas</option>
+                      {categorias.map((c) => <option key={c.valor} value={c.valor}>{c.label}</option>)}
+                    </select>
+                  </div>
+                  <div className="col-12 col-md-4 text-end">
                     {hayFiltros && (
                       <button className="btn btn-sm btn-outline-secondary" onClick={limpiarFiltros}>
                         <i className="bi bi-x-circle me-1" />Limpiar filtros
@@ -482,15 +496,15 @@ export default function RegistroMantenimiento() {
                   <table className="table table-sm table-hover align-middle mb-0">
                     <thead className="table-light" style={{ position: 'sticky', top: 0 }}>
                       <tr>
-                        <th>N.º de bien</th><th>Nombre</th><th>Serie</th><th>Subtipo</th><th>Marca</th><th>Ubicación</th><th>Estado</th><th></th>
+                        <th>N.º de bien</th><th>Nombre</th><th>Serie</th><th>Subtipo</th><th>Marca</th><th>Ubicación</th><th>Periodicidad</th><th>Estado</th><th></th>
                       </tr>
                     </thead>
                     <tbody>
                       {buscando && (
-                        <tr><td colSpan={8} className="text-center py-3"><span className="spinner-border spinner-border-sm me-2" />Buscando…</td></tr>
+                        <tr><td colSpan={9} className="text-center py-3"><span className="spinner-border spinner-border-sm me-2" />Buscando…</td></tr>
                       )}
                       {!buscando && resultados.length === 0 && (
-                        <tr><td colSpan={8} className="text-center texto-auxiliar py-3">No se encontraron equipos con los filtros aplicados.</td></tr>
+                        <tr><td colSpan={9} className="text-center texto-auxiliar py-3">No se encontraron equipos con los filtros aplicados.</td></tr>
                       )}
                       {!buscando && resultados.map((e) => (
                         <tr key={e._id}>
@@ -500,6 +514,7 @@ export default function RegistroMantenimiento() {
                           <td>{e.subTipo}</td>
                           <td>{e.marca}</td>
                           <td>{e.ubicacion}</td>
+                          <td>{e.categoria ? categoriaCorta(e.categoria) : <span className="texto-auxiliar">—</span>}</td>
                           <td><EstadoBadge estado={e.estado} /></td>
                           <td className="text-end">
                             <button className="btn btn-sm btn-primary" onClick={() => seleccionarEquipo(e)}>

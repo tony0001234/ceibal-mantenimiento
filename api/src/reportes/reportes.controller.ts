@@ -17,21 +17,21 @@ import { Roles } from '../common/decorators/roles.decorator';
 export class ReportesController {
   constructor(private readonly reportesService: ReportesService) {}
 
-  // Panel de indicadores (RF08): supervisor y administrador.
-  @Roles('administrador', 'supervisor')
+  // Panel de indicadores (RF08): administrador, supervisor y auditor (lectura).
+  @Roles('administrador', 'supervisor', 'auditor')
   @Get('indicadores')
   indicadores() {
     return this.reportesService.indicadores();
   }
 
-  // Vista previa del reporte (RF07): supervisor y administrador.
-  @Roles('administrador', 'supervisor')
+  // Vista previa del reporte (RF07): administrador, supervisor y auditor (lectura).
+  @Roles('administrador', 'supervisor', 'auditor')
   @Get('preview')
   preview(@Query() filtros: FiltrosReporte) {
     return this.reportesService.preview(filtros);
   }
 
-  @Roles('administrador', 'supervisor')
+  @Roles('administrador', 'supervisor', 'auditor')
   @Get('excel')
   async excel(@Query() filtros: FiltrosReporte, @Res() res: Response) {
     const wb = await this.reportesService.generarExcel(filtros);
@@ -47,7 +47,7 @@ export class ReportesController {
     res.end();
   }
 
-  @Roles('administrador', 'supervisor')
+  @Roles('administrador', 'supervisor', 'auditor')
   @Get('pdf')
   async pdf(@Query() filtros: FiltrosReporte, @Res() res: Response) {
     const buffer = await this.reportesService.generarPdf(filtros);
@@ -60,13 +60,13 @@ export class ReportesController {
   }
 
   // ---------- Reporte de equipos en alta (inventario) ----------
-  @Roles('administrador', 'supervisor')
+  @Roles('administrador', 'supervisor', 'auditor')
   @Get('equipos/preview')
   equiposPreview(@Query() f: FiltrosEquipos) {
     return this.reportesService.equiposReporte(f);
   }
 
-  @Roles('administrador', 'supervisor')
+  @Roles('administrador', 'supervisor', 'auditor')
   @Get('equipos/excel')
   async equiposExcel(@Query() f: FiltrosEquipos, @Res() res: Response) {
     const wb = await this.reportesService.generarEquiposExcel(f);
@@ -82,7 +82,7 @@ export class ReportesController {
     res.end();
   }
 
-  @Roles('administrador', 'supervisor')
+  @Roles('administrador', 'supervisor', 'auditor')
   @Get('equipos/pdf')
   async equiposPdf(@Query() f: FiltrosEquipos, @Res() res: Response) {
     const buffer = await this.reportesService.generarEquiposPdf(f);

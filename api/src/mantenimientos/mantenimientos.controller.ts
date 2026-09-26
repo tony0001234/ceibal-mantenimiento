@@ -27,6 +27,8 @@ export class MantenimientosController {
 
   // El tecnico y la empresa se toman automaticamente del usuario autenticado
   // (RF03 + regla de afiliacion). El cliente no puede elegir otra empresa.
+  // El auditor es solo lectura: no puede registrar mantenimientos.
+  @Roles('administrador', 'supervisor', 'tecnico')
   @Post()
   create(
     @Body() dto: CreateMantenimientoDto,
