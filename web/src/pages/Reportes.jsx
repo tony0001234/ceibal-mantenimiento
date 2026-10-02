@@ -1,9 +1,13 @@
-import { useState, useEffect } from 'react';
-import { equiposApi, reportesApi } from '../api/services';
+import { useState, useEffect, useMemo } from 'react';
+import { equiposApi, reportesApi, catalogosApi } from '../api/services';
 import { mensajeError } from '../api/client';
 import {
   TIPOS_MANTENIMIENTO, TIPO_MANT_LABEL, hoyISO, ordenarEquipos, etiquetaEquipo, fmtQ, precioAplica,
+  ESTADOS_EQUIPO, combinarCategorias, categoriaLabel,
 } from '../data/constants';
+
+// Filtros de equipo: los mismos del buscador de equipos (Equipos / Registro).
+const FILTROS_EQUIPO_VACIOS = { buscar: '', tipoEquipo: '', subTipo: '', marca: '', ubicacion: '', estado: '', categoria: '' };
 import EstadoBadge from '../components/EstadoBadge';
 import GraficasDiarias from '../components/GraficasDiarias';
 
@@ -14,7 +18,12 @@ export default function Reportes() {
   // ---------- Reporte de mantenimientos ----------
   const primerDiaMes = () => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 10); };
   const [equipos, setEquipos] = useState([]);
-  const [filtros, setFiltros] = useState({ desde: primerDiaMes(), hasta: hoyISO(), equipo: '', tipoTrabajo: '' });
+  const [filtros, setFiltros] = useState({ desde: primerDiaMes(), hasta: hoyISO(), equipo: '', tipoTrabajo: '', ...FILTROS_EQUIPO_VACIOS });
+  const [tiposEquipo, setTiposEquipo] = useState([]);
+  const [subtipos, setSubtipos] = useState([]); // {valor, padre}
+  const [marcas, setMarcas] = useState([]);
+  const [ubicaciones, setUbicaciones] = useState([]);
+  const [catCategorias, setCatCategorias] = useState([]);
   const [data, setData] = useState(null);
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState('');
@@ -34,7 +43,34 @@ export default function Reportes() {
     return p;
   };
 
-  useEffect(() => { equiposApi.listar().then(setEquipos).catch(() => {}); }, []);
+  // Catálogos para los desplegables de filtro (una sola vez).
+  useEffect(() => {
+    catalogosApi.listar('tipoEquipo').then((d) => setTiposEquipo((d || []).map((x) => x.valor))).catch(() => {});
+    catalogosApi.listar('subTipo').then((d) => setSubtipos((d || []).map((x) => ({ valor: x.valor, padre: x.padre })))).catch(() => {});
+    catalogosApi.listar('marca').then((d) => setMarcas((d || []).map((x) => x.valor))).catch(() => {});
+    catalogosApi.listar('ubicacion').then((d) => setUbicaciones((d || []).map((x) => x.valor))).catch(() => {});
+    catalogosApi.listar('categoria').then((d) => setCatCategorias(d || [])).catch(() => {});
+  }, []);
+  const categorias = useMemo(() => combinarCategorias(catCategorias), [catCategorias]);
+  const subtiposDisponibles = subtipos
+    .filter((s) => !filtros.tipoEquipo || s.padre === filtros.tipoEquipo)
+    .map((s) => s.valor);
+
+  // Parámetros de equipo activos: se envían al backend y acotan el desplegable «Equipo».
+  const paramsEquipo = () => {
+    const p = {};
+    if (filtros.buscar.trim()) p.buscar = filtros.buscar.trim();
+    ['tipoEquipo', 'subTipo', 'marca', 'ubicacion', 'estado', 'categoria'].forEach((k) => { if (filtros[k]) p[k] = filtros[k]; });
+    return p;
+  };
+  const hayFiltrosEquipo = Object.keys(FILTROS_EQUIPO_VACIOS).some((k) => filtros[k]);
+
+  // El desplegable «Equipo» muestra solo los equipos que cumplen los filtros de equipo.
+  useEffect(() => {
+    const t = setTimeout(() => { equiposApi.listar(paramsEquipo()).then(setEquipos).catch(() => {}); }, 300);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filtros.buscar, filtros.tipoEquipo, filtros.subTipo, filtros.marca, filtros.ubicacion, filtros.estado, filtros.categoria]);
 
   // Carga el inventario al abrir la pestaña y cada vez que cambian las fechas.
   useEffect(() => {
@@ -57,7 +93,7 @@ export default function Reportes() {
     if (filtros.equipo === '__ALTA__') p.excluirBaja = 'true';
     else if (filtros.equipo) p.equipo = filtros.equipo;
     if (filtros.tipoTrabajo) p.tipoTrabajo = filtros.tipoTrabajo;
-    return p;
+    return { ...p, ...paramsEquipo() };
   };
 
   const generar = async () => {
@@ -82,6 +118,7 @@ export default function Reportes() {
   };
 
   const set = (k, v) => { setFiltros({ ...filtros, [k]: v }); setData(null); };
+  const limpiarFiltrosEquipo = () => { setFiltros({ ...filtros, ...FILTROS_EQUIPO_VACIOS }); setData(null); };
   const equipoFiltro = equipos.find((e) => e._id === filtros.equipo);
 
   return (
@@ -126,6 +163,68 @@ export default function Reportes() {
                   </select>
                 </div>
               </div>
+
+              <div className="texto-auxiliar fw-semibold mt-3 mb-1">Filtros de equipo</div>
+              <div className="row g-2 align-items-end">
+                <div className="col-12 col-lg-4">
+                  <label className="form-label">Buscar</label>
+                  <div className="input-group">
+                    <span className="input-group-text"><i className="bi bi-search" /></span>
+                    <input className="form-control" placeholder="N.º de bien, nombre, serie o ubicación…"
+                      value={filtros.buscar} onChange={(e) => set('buscar', e.target.value)} />
+                  </div>
+                </div>
+                <div className="col-6 col-lg-2">
+                  <label className="form-label">Tipo de equipo</label>
+                  <select className="form-select" value={filtros.tipoEquipo}
+                    onChange={(e) => { setFiltros({ ...filtros, tipoEquipo: e.target.value, subTipo: '' }); setData(null); }}>
+                    <option value="">Todos</option>
+                    {tiposEquipo.map((t) => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </div>
+                <div className="col-6 col-lg-2">
+                  <label className="form-label">Subtipo</label>
+                  <select className="form-select" value={filtros.subTipo} onChange={(e) => set('subTipo', e.target.value)}>
+                    <option value="">Todos</option>
+                    {subtiposDisponibles.map((s) => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </div>
+                <div className="col-6 col-lg-2">
+                  <label className="form-label">Marca</label>
+                  <select className="form-select" value={filtros.marca} onChange={(e) => set('marca', e.target.value)}>
+                    <option value="">Todas</option>
+                    {marcas.map((m) => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                </div>
+                <div className="col-6 col-lg-2">
+                  <label className="form-label">Estado del equipo</label>
+                  <select className="form-select" value={filtros.estado} onChange={(e) => set('estado', e.target.value)}>
+                    <option value="">Todos</option>
+                    {ESTADOS_EQUIPO.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+                  </select>
+                </div>
+                <div className="col-12 col-md-6 col-lg-4">
+                  <label className="form-label">Servicio / ubicación</label>
+                  <select className="form-select" value={filtros.ubicacion} onChange={(e) => set('ubicacion', e.target.value)}>
+                    <option value="">Todas</option>
+                    {ubicaciones.map((u) => <option key={u} value={u}>{u}</option>)}
+                  </select>
+                </div>
+                <div className="col-12 col-md-6 col-lg-4">
+                  <label className="form-label">Periodicidad de mantenimiento</label>
+                  <select className="form-select" value={filtros.categoria} onChange={(e) => set('categoria', e.target.value)}>
+                    <option value="">Todas</option>
+                    {categorias.map((c) => <option key={c.valor} value={c.valor}>{c.label}</option>)}
+                  </select>
+                </div>
+                <div className="col-12 col-lg-4 text-lg-end">
+                  {hayFiltrosEquipo && (
+                    <button className="btn btn-sm btn-outline-secondary" onClick={limpiarFiltrosEquipo}>
+                      <i className="bi bi-x-circle me-1" />Limpiar filtros de equipo
+                    </button>
+                  )}
+                </div>
+              </div>
               <div className="d-flex gap-2 mt-3 flex-wrap">
                 <button className="btn btn-primary" onClick={generar} disabled={cargando}>
                   {cargando ? <><span className="spinner-border spinner-border-sm me-1" />Generando…</> : <><i className="bi bi-search me-1" />Generar reporte</>}
@@ -167,6 +266,13 @@ export default function Reportes() {
                   ? 'Todos los equipos en alta'
                   : (equipoFiltro ? `${equipoFiltro.codigoInventario} — ${equipoFiltro.nombre}` : 'Todos')} ·{' '}
                 Tipo: {filtros.tipoTrabajo ? TIPO_MANT_LABEL[filtros.tipoTrabajo] : 'Todos'}
+                {filtros.buscar.trim() && <> · Búsqueda: «{filtros.buscar.trim()}»</>}
+                {filtros.tipoEquipo && <> · Tipo de equipo: {filtros.tipoEquipo}</>}
+                {filtros.subTipo && <> · Subtipo: {filtros.subTipo}</>}
+                {filtros.marca && <> · Marca: {filtros.marca}</>}
+                {filtros.ubicacion && <> · Ubicación: {filtros.ubicacion}</>}
+                {filtros.estado && <> · Estado del equipo: {ESTADOS_EQUIPO.find((s) => s.value === filtros.estado)?.label}</>}
+                {filtros.categoria && <> · Periodicidad: {categoriaLabel(filtros.categoria)}</>}
               </div>
               <div className="mb-2"><strong style={{ fontSize: '14px' }}>Resumen del período</strong></div>
               <div className="row row-cols-2 row-cols-md-3 row-cols-lg-5 g-2 mb-3">
@@ -184,13 +290,14 @@ export default function Reportes() {
               <strong style={{ fontSize: '14px' }}>Detalle de mantenimientos</strong>
               <div className="table-responsive mt-1 mb-3">
                 <table className="table table-sm table-bordered">
-                  <thead><tr><th>Fecha</th><th>Equipo</th><th>Tipo</th><th>Técnico</th><th>Empresa</th><th className="text-end">Costo</th><th>Estado final</th></tr></thead>
+                  <thead><tr><th>Fecha</th><th>Equipo</th><th>Ubicación</th><th>Tipo</th><th>Técnico</th><th>Empresa</th><th className="text-end">Costo</th><th>Estado final</th></tr></thead>
                   <tbody>
-                    {data.resultados.length === 0 && <tr><td colSpan={7} className="text-center texto-auxiliar">Sin registros en el período seleccionado.</td></tr>}
+                    {data.resultados.length === 0 && <tr><td colSpan={8} className="text-center texto-auxiliar">Sin registros en el período seleccionado.</td></tr>}
                     {data.resultados.map((m) => (
                       <tr key={m._id}>
                         <td>{m.fechaMantenimiento?.slice(0, 10)}</td>
                         <td style={{ fontSize: '12.5px' }}>{m.equipo ? `${m.equipo.codigoInventario} — ${m.equipo.nombre}` : '—'}</td>
+                        <td>{m.equipo?.ubicacion || '—'}</td>
                         <td>{TIPO_MANT_LABEL[m.tipoTrabajo] || m.tipoTrabajo}</td>
                         <td>{m.tecnico?.nombre || '—'}</td>
                         <td>{m.empresa?.nombre || '—'}</td>

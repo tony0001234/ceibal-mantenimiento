@@ -65,7 +65,17 @@ export interface FiltrosReporte {
   tipoTrabajo?: string;
   // 'true' => incluir todos los equipos que NO estan dados de baja.
   excluirBaja?: string;
+  // Filtros por atributos del equipo (los mismos del buscador de equipos).
+  buscar?: string;
+  tipoEquipo?: string;
+  subTipo?: string;
+  marca?: string;
+  estado?: string;
+  ubicacion?: string;
+  categoria?: string;
 }
+
+const escaparRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 export interface FiltrosEquipos {
   desde?: string;
@@ -98,14 +108,28 @@ export class ReportesService {
 
   private async construirFiltro(f: FiltrosReporte) {
     const filtro: any = {};
-    if (f.equipo) {
-      filtro.equipo = new Types.ObjectId(f.equipo);
-    } else if (f.excluirBaja === 'true') {
-      // Solo mantenimientos de equipos que NO estan dados de baja.
-      const idsEnAlta = await this.equipoModel
-        .find({ estado: { $ne: 'BAJA' } })
-        .distinct('_id');
-      filtro.equipo = { $in: idsEnAlta };
+    // Condiciones sobre el equipo: selección puntual, "solo en alta" y los
+    // atributos del buscador de equipos. Se resuelven a una lista de ids.
+    const condEquipo: any[] = [];
+    if (f.excluirBaja === 'true' && !f.equipo) condEquipo.push({ estado: { $ne: 'BAJA' } });
+    if (f.tipoEquipo) condEquipo.push({ tipoEquipo: f.tipoEquipo });
+    if (f.subTipo) condEquipo.push({ subTipo: f.subTipo });
+    if (f.marca) condEquipo.push({ marca: f.marca });
+    if (f.estado) condEquipo.push({ estado: f.estado });
+    if (f.ubicacion) condEquipo.push({ ubicacion: f.ubicacion });
+    if (f.categoria) condEquipo.push({ categoria: f.categoria });
+    if (f.buscar?.trim()) {
+      const rx = new RegExp(escaparRegex(f.buscar.trim()), 'i');
+      condEquipo.push({
+        $or: [{ codigoInventario: rx }, { nombre: rx }, { serie: rx }, { ubicacion: rx }],
+      });
+    }
+    if (condEquipo.length === 0) {
+      if (f.equipo) filtro.equipo = new Types.ObjectId(f.equipo);
+    } else {
+      if (f.equipo) condEquipo.push({ _id: new Types.ObjectId(f.equipo) });
+      const ids = await this.equipoModel.find({ $and: condEquipo }).distinct('_id');
+      filtro.equipo = { $in: ids };
     }
     if (f.tipoTrabajo) filtro.tipoTrabajo = f.tipoTrabajo;
     if (f.desde || f.hasta) {
@@ -512,7 +536,16 @@ export class ReportesService {
         ? `${resultados[0].equipo.codigoInventario} - ${resultados[0].equipo.nombre}`
         : 'Todos';
     const tipo = f.tipoTrabajo ? ETIQUETA_TIPO[f.tipoTrabajo] : 'Todos';
-    return `Equipo: ${eq}   |   Tipo: ${tipo}`;
+    const partes = [`Equipo: ${f.excluirBaja === 'true' && !f.equipo ? 'Todos los equipos en alta' : eq}`, `Tipo: ${tipo}`];
+    // Solo se listan los filtros de equipo que se usaron.
+    if (f.buscar?.trim()) partes.push(`Búsqueda: «${f.buscar.trim()}»`);
+    if (f.tipoEquipo) partes.push(`Tipo de equipo: ${f.tipoEquipo}`);
+    if (f.subTipo) partes.push(`Subtipo: ${f.subTipo}`);
+    if (f.marca) partes.push(`Marca: ${f.marca}`);
+    if (f.ubicacion) partes.push(`Ubicación: ${f.ubicacion}`);
+    if (f.estado) partes.push(`Estado del equipo: ${ETIQUETA_ESTADO_EQUIPO[f.estado] || f.estado}`);
+    if (f.categoria) partes.push(`Periodicidad: ${etiquetaCategoria(f.categoria)}`);
+    return partes.join('   |   ');
   }
 
   // ==================== Exportacion a Excel (RF07) ====================
@@ -572,7 +605,7 @@ export class ReportesService {
     // Tabla de detalle
     const inicioTabla = fila + 1;
     const headers = [
-      'N.o', 'Fecha', 'N.o de bien', 'Equipo', 'Tipo', 'Periodo',
+      'N.o', 'Fecha', 'N.o de bien', 'Equipo', 'Ubicacion', 'Tipo', 'Periodo',
       'Tecnico', 'Empresa', 'Estado final', 'Costo (Q)',
     ];
     const hRow = ws.getRow(inicioTabla);
@@ -591,12 +624,13 @@ export class ReportesService {
       r.getCell(2).value = this.fechaCorta(m.fechaMantenimiento);
       r.getCell(3).value = m.equipo?.codigoInventario || '—';
       r.getCell(4).value = m.equipo?.nombre || '—';
-      r.getCell(5).value = ETIQUETA_TIPO[m.tipoTrabajo] || m.tipoTrabajo;
-      r.getCell(6).value = ETIQUETA_PERIODO[m.periodo] || m.periodo || '—';
-      r.getCell(7).value = m.tecnico?.nombre || '—';
-      r.getCell(8).value = m.empresa?.nombre || '—';
+      r.getCell(5).value = m.equipo?.ubicacion || '—';
+      r.getCell(6).value = ETIQUETA_TIPO[m.tipoTrabajo] || m.tipoTrabajo;
+      r.getCell(7).value = ETIQUETA_PERIODO[m.periodo] || m.periodo || '—';
+      r.getCell(8).value = m.tecnico?.nombre || '—';
+      r.getCell(9).value = m.empresa?.nombre || '—';
       const est = ETIQUETA_ESTADO[m.estadoEquipoResultante] || m.estadoEquipoResultante;
-      const cEst = r.getCell(9);
+      const cEst = r.getCell(10);
       cEst.value = est;
       cEst.font = {
         bold: true,
@@ -604,7 +638,7 @@ export class ReportesService {
           argb: m.estadoEquipoResultante === 'funcionando' ? 'FF1B8A4B' : 'FFC0392B',
         },
       };
-      const cCosto = r.getCell(10);
+      const cCosto = r.getCell(11);
       // Precio solo cuando corresponde (preventivo/correctivo, no en garantía).
       if (precioAplica(m.tipoTrabajo, m.periodo)) {
         cCosto.value = Number(m.costoMantenimiento) || 0;
@@ -614,7 +648,7 @@ export class ReportesService {
       }
       cCosto.alignment = { horizontal: 'right' };
       if (idx % 2 === 1) {
-        for (let i = 1; i <= 10; i++) r.getCell(i).fill = fill('FFF4F7FB');
+        for (let i = 1; i <= 11; i++) r.getCell(i).fill = fill('FFF4F7FB');
       }
     });
 
@@ -624,11 +658,11 @@ export class ReportesService {
     }
 
     // Anchos y autofiltro
-    const anchos = [8, 12, 12, 34, 20, 14, 22, 26, 16, 14];
+    const anchos = [8, 12, 12, 34, 24, 20, 14, 22, 26, 16, 14];
     anchos.forEach((w, i) => (ws.getColumn(i + 1).width = w));
     ws.autoFilter = {
       from: { row: inicioTabla, column: 1 },
-      to: { row: inicioTabla, column: 10 },
+      to: { row: inicioTabla, column: 11 },
     };
     ws.views = [{ state: 'frozen', ySplit: inicioTabla }];
 
@@ -856,12 +890,13 @@ export class ReportesService {
       // ---------- Tabla de detalle ----------
       const cols = [
         { key: 'fecha', label: 'Fecha', w: 48, align: 'left' as const },
-        { key: 'equipo', label: 'Equipo', w: 118, align: 'left' as const },
-        { key: 'tipo', label: 'Tipo', w: 66, align: 'left' as const },
-        { key: 'tecnico', label: 'Técnico', w: 70, align: 'left' as const },
-        { key: 'empresa', label: 'Empresa', w: 66, align: 'left' as const },
-        { key: 'costo', label: 'Costo (Q)', w: 54, align: 'right' as const },
-        { key: 'estado', label: 'Estado final', w: contentW - 48 - 118 - 66 - 70 - 66 - 54, align: 'left' as const },
+        { key: 'equipo', label: 'Equipo', w: 100, align: 'left' as const },
+        { key: 'ubicacion', label: 'Ubicación', w: 70, align: 'left' as const },
+        { key: 'tipo', label: 'Tipo', w: 60, align: 'left' as const },
+        { key: 'tecnico', label: 'Técnico', w: 60, align: 'left' as const },
+        { key: 'empresa', label: 'Empresa', w: 60, align: 'left' as const },
+        { key: 'costo', label: 'Costo (Q)', w: 52, align: 'right' as const },
+        { key: 'estado', label: 'Estado final', w: contentW - 48 - 100 - 70 - 60 - 60 - 60 - 52, align: 'left' as const },
       ];
       const padX = 5;
 
@@ -897,6 +932,7 @@ export class ReportesService {
         const cells: Record<string, string> = {
           fecha: this.fechaCorta(m.fechaMantenimiento),
           equipo: m.equipo ? `${m.equipo.codigoInventario} — ${m.equipo.nombre}` : '—',
+          ubicacion: m.equipo?.ubicacion || '—',
           tipo: ETIQUETA_TIPO[m.tipoTrabajo] || m.tipoTrabajo,
           tecnico: m.tecnico?.nombre || '—',
           empresa: m.empresa?.nombre || '—',
