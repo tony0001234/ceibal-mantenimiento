@@ -182,12 +182,25 @@ export class MantenimientosService {
     const fecha = dto.fechaMantenimiento ?? this.fechaISO(actual.fechaMantenimiento);
 
     // La regla de precio se reaplica: al cambiar de tipo/periodo, el costo se
-    // recalcula y no queda un precio que ya no corresponde.
+    // recalcula y no queda un precio que ya no corresponde. Si el registro ya
+    // era de precio manual y la edición no trae costoManual, se conserva el
+    // precio guardado (un PATCH sin el precio no debe dejarlo en 0).
+    const previo = actual as Pick<
+      Mantenimiento,
+      'tipoTrabajo' | 'periodo' | 'costoMantenimiento'
+    >;
+    const sigueManual =
+      modoPrecio(tipoTrabajo, periodo) === 'manual' &&
+      modoPrecio(previo.tipoTrabajo, previo.periodo) === 'manual';
+    const costoManual =
+      dto.costoManual === undefined && sigueManual
+        ? previo.costoMantenimiento
+        : dto.costoManual;
     const costoMantenimiento = await this.calcularCosto(
       tipoTrabajo,
       periodo,
       categoriaCosto,
-      dto.costoManual,
+      costoManual,
     );
 
     const cambios: any = {
