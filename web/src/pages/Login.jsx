@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { rutaInicio as destinoPara } from '../data/constants';
 
 // Pantalla de inicio de sesion (RF01). Login por correo institucional.
-const CON_PANEL = ['administrador', 'supervisor', 'auditor'];
-const destinoPara = (rol) => (CON_PANEL.includes(rol) ? '/app/panel' : '/app/equipos');
+// El destino tras ingresar depende del rol (ver rutaInicio en constants.js).
 
 export default function Login() {
   const { usuario, login } = useAuth();

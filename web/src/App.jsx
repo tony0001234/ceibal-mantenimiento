@@ -2,6 +2,7 @@ import { lazy, Suspense } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './context/AuthContext';
 import Login from './pages/Login';
+import { rutaInicio } from './data/constants';
 
 // Carga diferida (code-splitting): las vistas autenticadas se descargan solo
 // cuando se navega a ellas, de modo que la pantalla de login (primera carga)
@@ -36,6 +37,12 @@ function Rol({ roles, children }) {
   return children;
 }
 
+// Ruta índice de /app: lleva a la pantalla inicial que corresponde al rol.
+function Inicio() {
+  const { usuario } = useAuth();
+  return <Navigate to={rutaInicio(usuario?.rol)} replace />;
+}
+
 export default function App() {
   const { cargando } = useAuth();
 
@@ -56,7 +63,7 @@ export default function App() {
       <Routes>
         <Route path="/" element={<Login />} />
         <Route path="/app" element={<Layout />}>
-          <Route index element={<Navigate to="/app/equipos" replace />} />
+          <Route index element={<Inicio />} />
           <Route path="panel" element={<Rol roles={CON_PANEL}><Dashboard /></Rol>} />
           <Route path="registro" element={<Rol roles={['administrador', 'supervisor', 'tecnico']}><RegistroMantenimiento /></Rol>} />
           <Route path="equipos" element={<Equipos />} />

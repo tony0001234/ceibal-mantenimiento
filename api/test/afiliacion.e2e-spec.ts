@@ -216,6 +216,23 @@ describe('Empresa afiliada + usuarios + catalogos (e2e)', () => {
     expect(empresaId(r.body.empresa)).not.toBe(empresaB);
   });
 
+  // Coherencia del horario: la hora de salida debe ser posterior a la de entrada.
+  it('Horario: se rechaza un mantenimiento con la entrada posterior a la salida (400)', async () => {
+    const base = { equipo: equipoId, periodo: 'mensual', tipoTrabajo: 'preventivo', descripcionTrabajo: 'Horario invertido.', repuestosObservaciones: '', estadoEquipoResultante: 'funcionando', fechaMantenimiento: '2026-08-25' };
+    const r = await request(http).post('/mantenimientos').set('Authorization', `Bearer ${tokenTecnicoA}`)
+      .send({ ...base, horaInicio: '10:00', horaFin: '09:00' })
+      .expect(400);
+    expect(r.body.message).toBe('La hora de salida debe ser posterior a la hora de entrada.');
+    await request(http).post('/mantenimientos').set('Authorization', `Bearer ${tokenTecnicoA}`)
+      .send({ ...base, horaInicio: '09:00', horaFin: '09:00' })
+      .expect(400);
+    // No quedó nada guardado para esa fecha.
+    const dup = await request(http).get('/mantenimientos/duplicado')
+      .query({ equipo: equipoId, fecha: '2026-08-25' })
+      .set('Authorization', `Bearer ${tokenTecnicoA}`).expect(200);
+    expect(dup.body.duplicado).toBe(false);
+  });
+
   // Escenario permisos: un tecnico NO puede crear catalogos ni usuarios.
   it('Permisos: el tecnico no puede crear catalogos ni usuarios (403)', async () => {
     await request(http).post('/catalogos').set('Authorization', `Bearer ${tokenTecnicoA}`)

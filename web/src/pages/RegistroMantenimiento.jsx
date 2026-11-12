@@ -5,6 +5,7 @@ import { mensajeError } from '../api/client';
 import {
   TIPOS_MANTENIMIENTO, PERIODOS, ESTADOS_RESULTANTE, TIPO_MANT_LABEL, hoyISO,
   ESTADOS_EQUIPO, fmtQ, modoPrecio, combinarCategorias, categoriaCorta,
+  horarioInvalido, MSG_HORARIO,
 } from '../data/constants';
 import EstadoBadge from '../components/EstadoBadge';
 
@@ -133,17 +134,22 @@ export default function RegistroMantenimiento() {
       .catch(() => setCostoVigente(null));
   }, [equipoSel]);
 
+  // Horario incoherente (salida no posterior a la entrada): se avisa en cuanto
+  // ambas horas están puestas, sin esperar a que se intente guardar.
+  const horarioMal = horarioInvalido(form.horaInicio, form.horaFin);
+
   const faltan = {
     equipoId: tocado && !form.equipoId,
     tipoTrabajo: tocado && !form.tipoTrabajo,
     periodo: tocado && !form.periodo,
-    horaInicio: tocado && !form.horaInicio,
-    horaFin: tocado && !form.horaFin,
+    horaInicio: (tocado && !form.horaInicio) || horarioMal,
+    horaFin: (tocado && !form.horaFin) || horarioMal,
     descripcion: tocado && !form.descripcion.trim(),
     precio: tocado && modo === 'manual' && !precioManualValido,
   };
   const incompleto = !form.equipoId || !form.tipoTrabajo
     || !form.periodo || !form.horaInicio || !form.horaFin || !form.descripcion.trim()
+    || horarioMal
     || (modo === 'manual' && !precioManualValido);
 
   const set = (k, v) => { setForm({ ...form, [k]: v }); setGuardado(false); };
@@ -346,6 +352,11 @@ export default function RegistroMantenimiento() {
                   <label className="form-label">Hora de salida <span className="text-danger">*</span></label>
                   <input type="time" className={`form-control ${faltan.horaFin ? 'is-invalid' : ''}`} value={form.horaFin} onChange={(e) => set('horaFin', e.target.value)} />
                 </div>
+                {horarioMal && (
+                  <div className="col-12 text-danger" role="alert" style={{ fontSize: '.85rem' }}>
+                    <i className="bi bi-exclamation-circle me-1" />{MSG_HORARIO}
+                  </div>
+                )}
               </div>
 
               <div className="mb-3">

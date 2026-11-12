@@ -48,6 +48,18 @@ export class MantenimientosService {
     return new Date(`${fecha}T${hora}:00`);
   }
 
+  // Coherencia del horario: la salida debe ser posterior a la entrada. Ambas
+  // horas pertenecen al mismo día (la fecha del mantenimiento), así que un
+  // horario invertido o de duración cero se rechaza. Los reportes (MTTR)
+  // descartan las duraciones no positivas, por lo que no debe guardarse.
+  private validarHorario(inicio: Date, fin: Date): void {
+    if (new Date(fin).getTime() <= new Date(inicio).getTime()) {
+      throw new BadRequestException(
+        'La hora de salida debe ser posterior a la hora de entrada.',
+      );
+    }
+  }
+
   private fechaISO(d: Date | string): string {
     return new Date(d).toISOString().slice(0, 10);
   }
@@ -113,6 +125,13 @@ export class MantenimientosService {
         'Tu usuario no tiene una empresa afiliada. Solicita al administrador que la asigne.',
       );
     }
+    const horaInicio = this.combinarFechaHora(
+      dto.fechaMantenimiento,
+      dto.horaInicio,
+    );
+    const horaFin = this.combinarFechaHora(dto.fechaMantenimiento, dto.horaFin);
+    this.validarHorario(horaInicio, horaFin);
+
     if (!dto.confirmarDuplicado) {
       const duplicado = await this.buscarDuplicado(
         dto.equipo,
@@ -150,8 +169,8 @@ export class MantenimientosService {
       repuestosObservaciones: dto.repuestosObservaciones || '',
       estadoEquipoResultante: dto.estadoEquipoResultante,
       fechaMantenimiento: new Date(dto.fechaMantenimiento),
-      horaInicio: this.combinarFechaHora(dto.fechaMantenimiento, dto.horaInicio),
-      horaFin: this.combinarFechaHora(dto.fechaMantenimiento, dto.horaFin),
+      horaInicio,
+      horaFin,
       costoMantenimiento,
       categoriaCosto,
     });
@@ -180,6 +199,18 @@ export class MantenimientosService {
     const tipoTrabajo = dto.tipoTrabajo ?? actual.tipoTrabajo;
     const periodo = dto.periodo ?? actual.periodo;
     const fecha = dto.fechaMantenimiento ?? this.fechaISO(actual.fechaMantenimiento);
+
+    const horaInicio: Date = dto.horaInicio
+      ? this.combinarFechaHora(fecha, dto.horaInicio)
+      : actual.horaInicio;
+    const horaFin: Date = dto.horaFin
+      ? this.combinarFechaHora(fecha, dto.horaFin)
+      : actual.horaFin;
+    // Solo se valida cuando la edición toca alguna hora: así un registro
+    // antiguo puede corregirse en otros campos sin quedar bloqueado.
+    if (dto.horaInicio || dto.horaFin) {
+      this.validarHorario(horaInicio, horaFin);
+    }
 
     // La regla de precio se reaplica: al cambiar de tipo/periodo, el costo se
     // recalcula y no queda un precio que ya no corresponde. Si el registro ya
@@ -213,12 +244,8 @@ export class MantenimientosService {
       estadoEquipoResultante:
         dto.estadoEquipoResultante ?? actual.estadoEquipoResultante,
       fechaMantenimiento: new Date(fecha),
-      horaInicio: dto.horaInicio
-        ? this.combinarFechaHora(fecha, dto.horaInicio)
-        : actual.horaInicio,
-      horaFin: dto.horaFin
-        ? this.combinarFechaHora(fecha, dto.horaFin)
-        : actual.horaFin,
+      horaInicio,
+      horaFin,
       costoMantenimiento,
       categoriaCosto,
     };

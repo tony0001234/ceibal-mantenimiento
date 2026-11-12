@@ -82,6 +82,24 @@ export const MODULOS = [
   { key: 'admin',      ruta: '/app/administracion', label: 'Administración',            icon: 'bi-gear',                   roles: ['administrador'] },
 ];
 
+// Pantalla inicial tras iniciar sesión, según el rol: quienes tienen panel de
+// indicadores abren ahí; el técnico abre directo en el registro de
+// mantenimiento (su tarea habitual). Cualquier otro caso cae en Equipos.
+const INICIO_POR_ROL = {
+  administrador: '/app/panel',
+  supervisor: '/app/panel',
+  auditor: '/app/panel',
+  tecnico: '/app/registro',
+};
+export const rutaInicio = (rol) => INICIO_POR_ROL[rol] || '/app/equipos';
+
+// Horario incoherente: la hora de salida ("HH:MM") debe ser posterior a la de
+// entrada. Misma regla que valida el backend (mantenimientos.service.ts).
+// Con alguna hora vacía devuelve false: eso lo cubre la validación de obligatorios.
+export const horarioInvalido = (horaInicio, horaFin) =>
+  !!horaInicio && !!horaFin && horaFin <= horaInicio;
+export const MSG_HORARIO = 'La hora de salida debe ser posterior a la hora de entrada.';
+
 // ---------- Costos: categorías y periodicidades (deben coincidir con el backend) ----------
 export const CATEGORIAS_MANTENIMIENTO = [
   { valor: 'mensual_ac',       label: 'Equipos mensuales A/C' },

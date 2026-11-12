@@ -3,7 +3,7 @@ import { mantenimientosApi, costosApi } from '../api/services';
 import { mensajeError } from '../api/client';
 import {
   TIPOS_MANTENIMIENTO, PERIODOS, ESTADOS_RESULTANTE, fmtQ, modoPrecio,
-  ordenarEquipos, etiquetaEquipo,
+  ordenarEquipos, etiquetaEquipo, horarioInvalido, MSG_HORARIO,
 } from '../data/constants';
 
 // Modal de edición de un registro de mantenimiento existente (Historial).
@@ -59,18 +59,20 @@ export default function EditarMantenimientoModal({ registro, equipos, onCerrar, 
 
   const precioManualValido =
     precioManual !== '' && Number.isFinite(Number(precioManual)) && Number(precioManual) >= 0;
+  // Horario incoherente (salida no posterior a la entrada); misma regla que el registro.
+  const horarioMal = horarioInvalido(form.horaInicio, form.horaFin);
   const faltan = {
     equipoId: tocado && !form.equipoId,
     tipoTrabajo: tocado && !form.tipoTrabajo,
     periodo: tocado && !form.periodo,
     fecha: tocado && !form.fecha,
-    horaInicio: tocado && !form.horaInicio,
-    horaFin: tocado && !form.horaFin,
+    horaInicio: (tocado && !form.horaInicio) || horarioMal,
+    horaFin: (tocado && !form.horaFin) || horarioMal,
     descripcion: tocado && !form.descripcion.trim(),
     precio: tocado && modo === 'manual' && !precioManualValido,
   };
   const incompleto = !form.equipoId || !form.tipoTrabajo || !form.periodo || !form.fecha
-    || !form.horaInicio || !form.horaFin || !form.descripcion.trim()
+    || !form.horaInicio || !form.horaFin || !form.descripcion.trim() || horarioMal
     || (modo === 'manual' && !precioManualValido);
 
   const guardar = async () => {
@@ -149,6 +151,11 @@ export default function EditarMantenimientoModal({ registro, equipos, onCerrar, 
                 <input type="time" className={`form-control ${faltan.horaFin ? 'is-invalid' : ''}`}
                   value={form.horaFin} onChange={(e) => set('horaFin', e.target.value)} />
               </div>
+              {horarioMal && (
+                <div className="col-12 text-danger mt-1" role="alert" style={{ fontSize: '.85rem' }}>
+                  <i className="bi bi-exclamation-circle me-1" />{MSG_HORARIO}
+                </div>
+              )}
 
               {/* Precio dinámico según el tipo/periodo (misma regla que el registro). */}
               <div className="col-12 col-md-6">
