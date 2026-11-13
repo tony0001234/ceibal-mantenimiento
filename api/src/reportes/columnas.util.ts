@@ -23,20 +23,22 @@ export interface ColumnaReporte {
 // El orden de esta lista es el orden de las columnas en el reporte.
 export const COLUMNAS_REPORTE: ColumnaReporte[] = [
   { clave: 'fecha', label: 'Fecha', ancho: 60, anchoExcel: 12, align: 'left', porDefecto: true, anchoMin: 54 },
-  { clave: 'equipo', label: 'Equipo', ancho: 100, anchoExcel: 34, align: 'left', porDefecto: true },
+  // El N.º de bien va en su propia columna (antes iba dentro de «Equipo»).
+  { clave: 'bien', label: 'N.º de bien', ancho: 58, anchoExcel: 13, align: 'left', porDefecto: true, anchoMin: 58 },
+  { clave: 'equipo', label: 'Equipo', ancho: 82, anchoExcel: 34, align: 'left', porDefecto: true },
   { clave: 'serie', label: 'Serie', ancho: 58, anchoExcel: 18, align: 'left', porDefecto: false },
   { clave: 'marca', label: 'Marca', ancho: 50, anchoExcel: 16, align: 'left', porDefecto: false },
   { clave: 'ubicacion', label: 'Ubicación', ancho: 70, anchoExcel: 24, align: 'left', porDefecto: true },
-  { clave: 'tipo', label: 'Tipo', ancho: 68, anchoExcel: 20, align: 'left', porDefecto: true },
+  { clave: 'tipo', label: 'Tipo', ancho: 66, anchoExcel: 20, align: 'left', porDefecto: true },
   { clave: 'periodo', label: 'Periodo', ancho: 56, anchoExcel: 14, align: 'left', porDefecto: false },
-  { clave: 'tecnico', label: 'Técnico', ancho: 60, anchoExcel: 22, align: 'left', porDefecto: true },
-  { clave: 'empresa', label: 'Empresa', ancho: 60, anchoExcel: 26, align: 'left', porDefecto: true },
+  { clave: 'tecnico', label: 'Técnico', ancho: 54, anchoExcel: 22, align: 'left', porDefecto: true },
+  { clave: 'empresa', label: 'Empresa', ancho: 66, anchoExcel: 26, align: 'left', porDefecto: true },
   { clave: 'horaInicio', label: 'Entrada', ancho: 46, anchoExcel: 10, align: 'left', porDefecto: false, anchoMin: 42 },
   { clave: 'horaFin', label: 'Salida', ancho: 46, anchoExcel: 10, align: 'left', porDefecto: false, anchoMin: 40 },
   { clave: 'duracion', label: 'Duración (min)', ancho: 58, anchoExcel: 15, align: 'right', porDefecto: false, anchoMin: 50 },
   { clave: 'descripcion', label: 'Descripción del trabajo', ancho: 150, anchoExcel: 50, align: 'left', porDefecto: false },
   { clave: 'repuestos', label: 'Repuestos / observaciones', ancho: 110, anchoExcel: 36, align: 'left', porDefecto: false },
-  { clave: 'costo', label: 'Costo (Q)', ancho: 52, anchoExcel: 14, align: 'right', porDefecto: true, anchoMin: 52 },
+  { clave: 'costo', label: 'Costo (Q)', ancho: 58, anchoExcel: 14, align: 'right', porDefecto: true, anchoMin: 58 },
   { clave: 'estado', label: 'Estado final', ancho: 65, anchoExcel: 16, align: 'left', porDefecto: true, anchoMin: 64 },
 ];
 

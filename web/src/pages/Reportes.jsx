@@ -18,7 +18,8 @@ import GraficasDiarias from '../components/GraficasDiarias';
 const TEXTO_LARGO = { fontSize: '12.5px', minWidth: 220, whiteSpace: 'pre-wrap' };
 const CELDAS = {
   fecha: { estilo: { whiteSpace: 'nowrap' }, td: (m) => m.fechaMantenimiento?.slice(0, 10) },
-  equipo: { estilo: { fontSize: '12.5px' }, td: (m) => (m.equipo ? `${m.equipo.codigoInventario} — ${m.equipo.nombre}` : '—') },
+  bien: { estilo: { whiteSpace: 'nowrap' }, td: (m) => m.equipo?.codigoInventario || '—' },
+  equipo: { estilo: { fontSize: '12.5px' }, td: (m) => m.equipo?.nombre || '—' },
   serie: { td: (m) => m.equipo?.serie || '—' },
   marca: { td: (m) => m.equipo?.marca || '—' },
   ubicacion: { td: (m) => m.equipo?.ubicacion || '—' },
@@ -379,7 +380,7 @@ export default function Reportes() {
                       )}.
                     </>
                   )}
-                  {columnasVisibles.length > 8 && ' Con muchas columnas, el PDF se genera en hoja horizontal.'}
+                  {columnasVisibles.length > 9 && ' Con muchas columnas, el PDF se genera en hoja horizontal.'}
                 </div>
               </div>
 

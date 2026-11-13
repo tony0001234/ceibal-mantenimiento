@@ -107,6 +107,7 @@ export const MSG_HORARIO = 'La hora de salida debe ser posterior a la hora de en
 // `porDefecto` = columnas que el reporte ya mostraba antes de ser configurable.
 export const COLUMNAS_REPORTE = [
   { clave: 'fecha',       label: 'Fecha',                     porDefecto: true },
+  { clave: 'bien',        label: 'N.º de bien',               porDefecto: true },
   { clave: 'equipo',      label: 'Equipo',                    porDefecto: true },
   { clave: 'serie',       label: 'Serie',                     porDefecto: false },
   { clave: 'marca',       label: 'Marca',                     porDefecto: false },

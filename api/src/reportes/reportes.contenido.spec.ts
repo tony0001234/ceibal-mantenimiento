@@ -17,7 +17,7 @@ const claves = (cols: { clave: string }[]) => cols.map((c) => c.clave);
 
 // Las columnas que el reporte mostraba antes de ser configurable.
 const DE_SIEMPRE = [
-  'fecha', 'equipo', 'ubicacion', 'tipo', 'tecnico', 'empresa', 'costo', 'estado',
+  'fecha', 'bien', 'equipo', 'ubicacion', 'tipo', 'tecnico', 'empresa', 'costo', 'estado',
 ];
 
 describe('resolverColumnas / resolverGraficas', () => {
@@ -30,6 +30,12 @@ describe('resolverColumnas / resolverGraficas', () => {
     expect(claves(resolverColumnas('descripcion, fecha,equipo'))).toEqual([
       'fecha', 'equipo', 'descripcion',
     ]);
+  });
+
+  it('el N.º de bien es una columna aparte, entre la fecha y el equipo', () => {
+    const orden = COLUMNAS_REPORTE.map((c) => c.clave);
+    expect(orden.slice(0, 4)).toEqual(['fecha', 'bien', 'equipo', 'serie']);
+    expect(claves(resolverColumnas('equipo,fecha'))).toEqual(['fecha', 'equipo']);
   });
 
   it('ignora claves desconocidas', () => {
@@ -149,7 +155,7 @@ describe('Excel del reporte', () => {
   it('sin selección lleva las columnas de siempre y las hojas de gráficas', async () => {
     const wb = await crearServicio().generarExcel(RANGO);
     expect(encabezadosExcel(wb)).toEqual([
-      'N.o', 'Fecha', 'N.o de bien', 'Equipo', 'Ubicación', 'Tipo', 'Técnico',
+      'N.o', 'Fecha', 'N.º de bien', 'Equipo', 'Ubicación', 'Tipo', 'Técnico',
       'Empresa', 'Costo (Q)', 'Estado final',
     ]);
     expect(wb.getWorksheet('Por dia')).toBeDefined();
@@ -184,7 +190,7 @@ describe('Excel del reporte', () => {
       ...RANGO,
       columnas: COLUMNAS_REPORTE.map((c) => c.clave).join(','),
     });
-    // N.o + 16 columnas, con «Equipo» separado en dos.
+    // N.o + las 17 columnas del catálogo.
     expect(encabezadosExcel(wb)).toHaveLength(18);
     // El costo no aplica a una emergencia en garantía.
     const fila2 = filaDatosExcel(wb, 2);

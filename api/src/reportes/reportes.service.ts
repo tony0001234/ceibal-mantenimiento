@@ -521,7 +521,8 @@ export class ReportesService {
     const dur = this.duracionMinutos(m);
     return {
       fecha: this.fechaCorta(m.fechaMantenimiento),
-      equipo: m.equipo ? `${m.equipo.codigoInventario} — ${m.equipo.nombre}` : '—',
+      bien: m.equipo?.codigoInventario || '—',
+      equipo: m.equipo?.nombre || '—',
       serie: m.equipo?.serie || '—',
       marca: m.equipo?.marca || '—',
       ubicacion: m.equipo?.ubicacion || '—',
@@ -679,19 +680,13 @@ export class ReportesService {
     });
 
     // Tabla de detalle. Las columnas son las elegidas en el reporte; el N.o de
-    // registro va siempre primero y «Equipo» se separa en N.o de bien + nombre
-    // para poder ordenar y filtrar por cualquiera de los dos en Excel.
+    // registro va siempre primero.
     const inicioTabla = fila + 1;
     const elegidas = resolverColumnas(f.columnas);
     type ColExcel = { h: string; w: number; clave: string };
     const colsExcel: ColExcel[] = [{ h: 'N.o', w: 8, clave: '_id' }];
     elegidas.forEach((c) => {
-      if (c.clave === 'equipo') {
-        colsExcel.push({ h: 'N.o de bien', w: 12, clave: '_bien' });
-        colsExcel.push({ h: 'Equipo', w: c.anchoExcel, clave: '_nombre' });
-      } else {
-        colsExcel.push({ h: c.label, w: c.anchoExcel, clave: c.clave });
-      }
+      colsExcel.push({ h: c.label, w: c.anchoExcel, clave: c.clave });
     });
     const nCols = colsExcel.length;
 
@@ -712,10 +707,6 @@ export class ReportesService {
         const c = r.getCell(i + 1);
         if (col.clave === '_id') {
           c.value = String(m._id).slice(-6);
-        } else if (col.clave === '_bien') {
-          c.value = m.equipo?.codigoInventario || '—';
-        } else if (col.clave === '_nombre') {
-          c.value = m.equipo?.nombre || '—';
         } else if (col.clave === 'costo') {
           // Precio solo cuando corresponde (preventivo/correctivo, no en garantía).
           if (precioAplica(m.tipoTrabajo, m.periodo)) {
@@ -857,7 +848,7 @@ export class ReportesService {
     const graficas = resolverGraficas(f.graficas, f.tipoTrabajo);
     const recuadros = resolverResumen(f.resumen, f.tipoTrabajo);
     const anchoBase = columnas.reduce((a, c) => a + c.ancho, 0);
-    const horizontal = anchoBase > 535;
+    const horizontal = anchoBase > 585;
 
     return new Promise((resolve) => {
       const doc = new PDFDocument({
@@ -1027,9 +1018,9 @@ export class ReportesService {
         w: comprimir && c.anchoMin ? c.anchoMin : c.ancho * escala,
         align: c.align,
       }));
-      const fsCelda = escala < 0.7 ? 7 : escala < 0.85 ? 7.5 : 8.5;
-      const fsEnc = escala < 0.7 ? 7.5 : escala < 0.85 ? 8 : 9;
-      const padX = escala < 0.7 ? 3 : escala < 0.85 ? 3.5 : 5;
+      const fsCelda = escala < 0.7 ? 7 : escala < 0.8 ? 7.5 : escala < 0.9 ? 8 : 8.5;
+      const fsEnc = escala < 0.7 ? 7.5 : escala < 0.8 ? 8 : 9;
+      const padX = escala < 0.7 ? 3 : escala < 0.8 ? 3.5 : 5;
 
       const drawHeaderRow = () => {
         const y = doc.y;
