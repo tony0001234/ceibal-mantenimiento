@@ -100,6 +100,69 @@ export const horarioInvalido = (horaInicio, horaFin) =>
   !!horaInicio && !!horaFin && horaFin <= horaInicio;
 export const MSG_HORARIO = 'La hora de salida debe ser posterior a la hora de entrada.';
 
+// ---------- Reportes: contenido configurable (RF07) ----------
+// Columnas del detalle y gráficas que el usuario puede marcar o desmarcar.
+// DUPLICADO de `api/src/reportes/columnas.util.ts`: mismas claves, mismo orden
+// y mismas columnas por defecto, para que pantalla, PDF y Excel coincidan.
+// `porDefecto` = columnas que el reporte ya mostraba antes de ser configurable.
+export const COLUMNAS_REPORTE = [
+  { clave: 'fecha',       label: 'Fecha',                     porDefecto: true },
+  { clave: 'equipo',      label: 'Equipo',                    porDefecto: true },
+  { clave: 'serie',       label: 'Serie',                     porDefecto: false },
+  { clave: 'marca',       label: 'Marca',                     porDefecto: false },
+  { clave: 'ubicacion',   label: 'Ubicación',                 porDefecto: true },
+  { clave: 'tipo',        label: 'Tipo',                      porDefecto: true },
+  { clave: 'periodo',     label: 'Periodo',                   porDefecto: false },
+  { clave: 'tecnico',     label: 'Técnico',                   porDefecto: true },
+  { clave: 'empresa',     label: 'Empresa',                   porDefecto: true },
+  { clave: 'horaInicio',  label: 'Entrada',                   porDefecto: false },
+  { clave: 'horaFin',     label: 'Salida',                    porDefecto: false },
+  { clave: 'duracion',    label: 'Duración (min)',            porDefecto: false },
+  { clave: 'descripcion', label: 'Descripción del trabajo',   porDefecto: false },
+  { clave: 'repuestos',   label: 'Repuestos / observaciones', porDefecto: false },
+  { clave: 'costo',       label: 'Costo',                     porDefecto: true },
+  { clave: 'estado',      label: 'Estado final',              porDefecto: true },
+];
+export const COLUMNAS_REPORTE_DEFECTO = COLUMNAS_REPORTE.filter((c) => c.porDefecto).map((c) => c.clave);
+
+export const GRAFICAS_REPORTE = [
+  { clave: 'costo',        label: 'Costo por día' },
+  { clave: 'emergencias',  label: 'Llamadas de emergencia por día' },
+  { clave: 'reparaciones', label: 'Reparaciones por día' },
+];
+
+// Recuadros del «Resumen del período» (mismas claves que el backend).
+export const RESUMEN_REPORTE = [
+  { clave: 'total',      label: 'Mantenimientos' },
+  { clave: 'equipos',    label: 'Equipos atendidos' },
+  { clave: 'fuera',      label: 'Fuera de servicio' },
+  { clave: 'mttr',       label: 'MTTR' },
+  { clave: 'preventivo', label: 'Tiempo de preventivo' },
+  { clave: 'costo',      label: 'Costo total' },
+];
+
+// Contenido PERTINENTE según el filtro de tipo de trabajo: al filtrar un tipo,
+// se desmarca lo que no puede tener datos (p. ej. una llamada de emergencia no
+// lleva precio ni es un preventivo). El usuario puede volver a marcarlo.
+// DUPLICADO de PERTINENCIA en `api/src/reportes/columnas.util.ts`.
+const PERTINENCIA_REPORTE = {
+  preventivo:         { graficas: ['costo'],                 resumen: ['total', 'equipos', 'fuera', 'preventivo', 'costo'] },
+  correctivo:         { graficas: ['costo', 'reparaciones'], resumen: ['total', 'equipos', 'fuera', 'mttr', 'costo'] },
+  llamada_emergencia: { graficas: ['emergencias'],           resumen: ['total', 'equipos', 'fuera', 'mttr'] },
+  evaluacion_interna: { graficas: [],                        resumen: ['total', 'equipos', 'fuera'] },
+};
+export const contenidoPertinente = (tipoTrabajo) => {
+  const p = PERTINENCIA_REPORTE[tipoTrabajo];
+  return {
+    graficas: p ? [...p.graficas] : GRAFICAS_REPORTE.map((g) => g.clave),
+    resumen: p ? [...p.resumen] : RESUMEN_REPORTE.map((r) => r.clave),
+    // La columna Costo solo aporta si el tipo puede llevar precio.
+    costo: !tipoTrabajo || tipoTrabajo === 'preventivo' || tipoTrabajo === 'correctivo',
+  };
+};
+
+export const PERIODO_LABEL = Object.fromEntries(PERIODOS.map((p) => [p.value, p.label]));
+
 // ---------- Costos: categorías y periodicidades (deben coincidir con el backend) ----------
 export const CATEGORIAS_MANTENIMIENTO = [
   { valor: 'mensual_ac',       label: 'Equipos mensuales A/C' },

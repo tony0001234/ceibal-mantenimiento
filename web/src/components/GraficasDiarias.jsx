@@ -92,7 +92,32 @@ function TarjetaGrafica({ titulo, subtitulo, icono, series, dataKey, color, mone
   );
 }
 
-export default function GraficasDiarias({ series = [], periodoLabel }) {
+// Las tres gráficas disponibles. La clave coincide con el campo de la serie.
+const GRAFICAS = [
+  {
+    clave: 'costo', titulo: 'Costo por día', icono: 'bi-cash-coin',
+    subtitulo: 'Costo de mantenimiento generado cada día.',
+    color: AZUL, moneda: true, ejeY: 'Costo (Q)',
+  },
+  {
+    clave: 'emergencias', titulo: 'Llamadas de emergencia por día', icono: 'bi-telephone-inbound',
+    subtitulo: 'Cantidad de llamadas de emergencia registradas cada día.',
+    color: ROJO, unidad: 'llamada(s)', ejeY: 'N.º de llamadas',
+  },
+  {
+    clave: 'reparaciones', titulo: 'Reparaciones por día', icono: 'bi-tools',
+    subtitulo: 'Mantenimientos correctivos realizados cada día.',
+    color: AMBAR, unidad: 'reparación(es)', ejeY: 'N.º de reparaciones',
+  },
+];
+
+// `mostrar` (opcional): claves de las gráficas a incluir. Sin él se muestran las
+// tres (Dashboard). En Reportes lo controla el usuario con las casillas.
+export default function GraficasDiarias({ series = [], periodoLabel, mostrar }) {
+  const visibles = mostrar ? GRAFICAS.filter((g) => mostrar.includes(g.clave)) : GRAFICAS;
+  if (visibles.length === 0) return null;
+  // Con menos gráficas, cada una aprovecha el ancho disponible.
+  const col = visibles.length === 1 ? 'col-12' : visibles.length === 2 ? 'col-12 col-xl-6' : 'col-12 col-xl-4';
   return (
     <>
       <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2 mt-1">
@@ -102,30 +127,15 @@ export default function GraficasDiarias({ series = [], periodoLabel }) {
         {periodoLabel && <span className="texto-auxiliar text-capitalize">{periodoLabel}</span>}
       </div>
       <div className="row g-3">
-        <div className="col-12 col-xl-4">
-          <TarjetaGrafica
-            titulo="Costo por día" icono="bi-cash-coin"
-            subtitulo="Costo de mantenimiento generado cada día."
-            series={series} dataKey="costo" color={AZUL}
-            moneda ejeY="Costo (Q)"
-          />
-        </div>
-        <div className="col-12 col-xl-4">
-          <TarjetaGrafica
-            titulo="Llamadas de emergencia por día" icono="bi-telephone-inbound"
-            subtitulo="Cantidad de llamadas de emergencia registradas cada día."
-            series={series} dataKey="emergencias" color={ROJO}
-            unidad="llamada(s)" ejeY="N.º de llamadas"
-          />
-        </div>
-        <div className="col-12 col-xl-4">
-          <TarjetaGrafica
-            titulo="Reparaciones por día" icono="bi-tools"
-            subtitulo="Mantenimientos correctivos realizados cada día."
-            series={series} dataKey="reparaciones" color={AMBAR}
-            unidad="reparación(es)" ejeY="N.º de reparaciones"
-          />
-        </div>
+        {visibles.map((g) => (
+          <div className={col} key={g.clave}>
+            <TarjetaGrafica
+              titulo={g.titulo} icono={g.icono} subtitulo={g.subtitulo}
+              series={series} dataKey={g.clave} color={g.color}
+              moneda={g.moneda} unidad={g.unidad} ejeY={g.ejeY}
+            />
+          </div>
+        ))}
       </div>
     </>
   );

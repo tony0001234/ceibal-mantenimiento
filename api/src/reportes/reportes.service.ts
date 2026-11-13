@@ -18,6 +18,12 @@ import {
 } from '../catalogos/schemas/catalogo.schema';
 import { precioAplica } from '../mantenimientos/precio.util';
 import { generarImagenesGraficas } from './graficas.util';
+import {
+  ColumnaReporte,
+  resolverColumnas,
+  resolverGraficas,
+  resolverResumen,
+} from './columnas.util';
 
 // Etiqueta legible de una categoría / periodicidad de mantenimiento. Para las
 // categorías fijas usa su etiqueta; para las creadas por el usuario, el valor.
@@ -73,7 +79,20 @@ export interface FiltrosReporte {
   estado?: string;
   ubicacion?: string;
   categoria?: string;
+  // Contenido del reporte (ver columnas.util.ts): claves separadas por coma.
+  // Sin `columnas` se usan las de por defecto; sin `graficas`, las tres.
+  // Sin `resumen`/`graficas` se incluye lo pertinente al tipo de trabajo.
+  columnas?: string;
+  graficas?: string;
+  resumen?: string;
 }
+
+// Gráficas diarias disponibles (misma definición para el PDF y el Excel).
+const GRAFICAS_DEF = {
+  costo: { titulo: 'Costo por día', encabezado: 'Costo (Q)', color: AZUL, argb: 'FF1B4B8A', ejeY: 'Costo (Q)', moneda: true },
+  emergencias: { titulo: 'Llamadas de emergencia por día', encabezado: 'Llamadas de emergencia', color: ROJO, argb: 'FFC0392B', ejeY: 'N.º de llamadas', moneda: false },
+  reparaciones: { titulo: 'Reparaciones por día', encabezado: 'Reparaciones', color: AMBAR, argb: 'FFB7791F', ejeY: 'N.º de reparaciones', moneda: false },
+} as const;
 
 const escaparRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -461,17 +480,65 @@ export class ReportesService {
   // ---------- Vista previa del reporte (RF07) ----------
   async preview(f: FiltrosReporte) {
     const filtro = await this.construirFiltro(f);
-    const resultados = await this.mantenimientoModel
+    const docs = await this.mantenimientoModel
       .find(filtro)
       .sort({ fechaMantenimiento: 1 })
       .populate([
-        { path: 'equipo', select: 'codigoInventario nombre subTipo ubicacion' },
+        {
+          path: 'equipo',
+          select: 'codigoInventario nombre subTipo ubicacion serie marca',
+        },
         { path: 'tecnico', select: 'nombre' },
         { path: 'empresa', select: 'nombre' },
       ])
       .exec();
 
+    // Las horas y la duración se entregan ya calculadas por el servidor, para
+    // que la pantalla muestre exactamente lo mismo que el PDF y el Excel (sin
+    // depender de la zona horaria del navegador).
+    const resultados: any[] = docs.map((d: any) => {
+      const m = typeof d.toObject === 'function' ? d.toObject() : d;
+      return {
+        ...m,
+        horaInicioTexto: this.hora(m.horaInicio),
+        horaFinTexto: this.hora(m.horaFin),
+        duracionMinutos: this.duracionMinutos(m),
+      };
+    });
+
     return { resultados, resumen: this.resumen(resultados, f) };
+  }
+
+  // Duración del mantenimiento en minutos (null si no puede calcularse).
+  private duracionMinutos(m: any): number | null {
+    const h = this.horasEntre(m.horaInicio, m.horaFin);
+    return h === null ? null : Math.round(h * 60);
+  }
+
+  // Texto de cada columna configurable del detalle para un mantenimiento.
+  // Fuente única de los valores que imprimen el PDF y el Excel.
+  private celdasDetalle(m: any): Record<string, string> {
+    const dur = this.duracionMinutos(m);
+    return {
+      fecha: this.fechaCorta(m.fechaMantenimiento),
+      equipo: m.equipo ? `${m.equipo.codigoInventario} — ${m.equipo.nombre}` : '—',
+      serie: m.equipo?.serie || '—',
+      marca: m.equipo?.marca || '—',
+      ubicacion: m.equipo?.ubicacion || '—',
+      tipo: ETIQUETA_TIPO[m.tipoTrabajo] || m.tipoTrabajo,
+      periodo: ETIQUETA_PERIODO[m.periodo] || m.periodo || '—',
+      tecnico: m.tecnico?.nombre || '—',
+      empresa: m.empresa?.nombre || '—',
+      horaInicio: this.hora(m.horaInicio),
+      horaFin: this.hora(m.horaFin),
+      duracion: dur === null ? '—' : String(dur),
+      descripcion: (m.descripcionTrabajo || '').trim() || '—',
+      repuestos: (m.repuestosObservaciones || '').trim() || '—',
+      costo: precioAplica(m.tipoTrabajo, m.periodo)
+        ? this.quetzales(Number(m.costoMantenimiento) || 0)
+        : '—',
+      estado: ETIQUETA_ESTADO[m.estadoEquipoResultante] || m.estadoEquipoResultante,
+    };
   }
 
   // Resumen cuantitativo del periodo (totales, equipos atendidos, MTTR, etc.).
@@ -583,17 +650,26 @@ export class ReportesService {
     // Resumen del periodo
     ws.getCell('A6').value = 'Resumen del periodo';
     ws.getCell('A6').font = { bold: true, size: 12, color: { argb: A } };
+    // Solo los recuadros elegidos (o los pertinentes al tipo filtrado). El
+    // desglose por tipo se omite cuando el reporte ya es de un solo tipo.
+    const recuadros = resolverResumen(f.resumen, f.tipoTrabajo);
+    const RESUMEN_EXCEL: Record<string, [string, number | string]> = {
+      total: ['Total de mantenimientos', resumen.total],
+      equipos: ['Equipos atendidos', resumen.equiposAtendidos],
+      fuera: ['Intervenciones que dejaron equipo fuera de servicio', resumen.fueraDeServicio],
+      mttr: ['MTTR del periodo (min)', resumen.mttrMinutos],
+      preventivo: ['Tiempo medio de mantenimiento preventivo (min)', resumen.preventivoMinutos],
+      costo: ['Costo total del periodo (Q)', resumen.costoTotal],
+    };
     const resumenPares: [string, number | string][] = [
-      ['Total de mantenimientos', resumen.total],
-      ['Equipos atendidos', resumen.equiposAtendidos],
-      ['Intervenciones que dejaron equipo fuera de servicio', resumen.fueraDeServicio],
-      ['MTTR del periodo (min)', resumen.mttrMinutos],
-      ['Tiempo medio de mantenimiento preventivo (min)', resumen.preventivoMinutos],
-      ['Costo total del periodo (Q)', resumen.costoTotal],
-      ...Object.entries(resumen.porTipo).map(
-        ([t, c]) => [`  · ${t}`, c] as [string, number],
-      ),
+      ...recuadros.map((r) => RESUMEN_EXCEL[r]),
+      ...(f.tipoTrabajo
+        ? []
+        : Object.entries(resumen.porTipo).map(
+            ([t, c]) => [`  · ${t}`, c] as [string, number],
+          )),
     ];
+    if (resumenPares.length === 0) ws.getCell('A6').value = null;
     let fila = 7;
     resumenPares.forEach(([k, v]) => {
       ws.getCell(`A${fila}`).value = k;
@@ -602,16 +678,27 @@ export class ReportesService {
       fila++;
     });
 
-    // Tabla de detalle
+    // Tabla de detalle. Las columnas son las elegidas en el reporte; el N.o de
+    // registro va siempre primero y «Equipo» se separa en N.o de bien + nombre
+    // para poder ordenar y filtrar por cualquiera de los dos en Excel.
     const inicioTabla = fila + 1;
-    const headers = [
-      'N.o', 'Fecha', 'N.o de bien', 'Equipo', 'Ubicacion', 'Tipo', 'Periodo',
-      'Tecnico', 'Empresa', 'Estado final', 'Costo (Q)',
-    ];
+    const elegidas = resolverColumnas(f.columnas);
+    type ColExcel = { h: string; w: number; clave: string };
+    const colsExcel: ColExcel[] = [{ h: 'N.o', w: 8, clave: '_id' }];
+    elegidas.forEach((c) => {
+      if (c.clave === 'equipo') {
+        colsExcel.push({ h: 'N.o de bien', w: 12, clave: '_bien' });
+        colsExcel.push({ h: 'Equipo', w: c.anchoExcel, clave: '_nombre' });
+      } else {
+        colsExcel.push({ h: c.label, w: c.anchoExcel, clave: c.clave });
+      }
+    });
+    const nCols = colsExcel.length;
+
     const hRow = ws.getRow(inicioTabla);
-    headers.forEach((h, i) => {
+    colsExcel.forEach((col, i) => {
       const c = hRow.getCell(i + 1);
-      c.value = h;
+      c.value = col.h;
       c.fill = fill(A);
       c.font = { bold: true, color: { argb: 'FFFFFFFF' } };
       c.alignment = { vertical: 'middle' };
@@ -620,36 +707,45 @@ export class ReportesService {
 
     resultados.forEach((m: any, idx: number) => {
       const r = ws.getRow(inicioTabla + 1 + idx);
-      r.getCell(1).value = String(m._id).slice(-6);
-      r.getCell(2).value = this.fechaCorta(m.fechaMantenimiento);
-      r.getCell(3).value = m.equipo?.codigoInventario || '—';
-      r.getCell(4).value = m.equipo?.nombre || '—';
-      r.getCell(5).value = m.equipo?.ubicacion || '—';
-      r.getCell(6).value = ETIQUETA_TIPO[m.tipoTrabajo] || m.tipoTrabajo;
-      r.getCell(7).value = ETIQUETA_PERIODO[m.periodo] || m.periodo || '—';
-      r.getCell(8).value = m.tecnico?.nombre || '—';
-      r.getCell(9).value = m.empresa?.nombre || '—';
-      const est = ETIQUETA_ESTADO[m.estadoEquipoResultante] || m.estadoEquipoResultante;
-      const cEst = r.getCell(10);
-      cEst.value = est;
-      cEst.font = {
-        bold: true,
-        color: {
-          argb: m.estadoEquipoResultante === 'funcionando' ? 'FF1B8A4B' : 'FFC0392B',
-        },
-      };
-      const cCosto = r.getCell(11);
-      // Precio solo cuando corresponde (preventivo/correctivo, no en garantía).
-      if (precioAplica(m.tipoTrabajo, m.periodo)) {
-        cCosto.value = Number(m.costoMantenimiento) || 0;
-        cCosto.numFmt = '"Q"#,##0.00';
-      } else {
-        cCosto.value = '—';
-      }
-      cCosto.alignment = { horizontal: 'right' };
-      if (idx % 2 === 1) {
-        for (let i = 1; i <= 11; i++) r.getCell(i).fill = fill('FFF4F7FB');
-      }
+      const textos = this.celdasDetalle(m);
+      colsExcel.forEach((col, i) => {
+        const c = r.getCell(i + 1);
+        if (col.clave === '_id') {
+          c.value = String(m._id).slice(-6);
+        } else if (col.clave === '_bien') {
+          c.value = m.equipo?.codigoInventario || '—';
+        } else if (col.clave === '_nombre') {
+          c.value = m.equipo?.nombre || '—';
+        } else if (col.clave === 'costo') {
+          // Precio solo cuando corresponde (preventivo/correctivo, no en garantía).
+          if (precioAplica(m.tipoTrabajo, m.periodo)) {
+            c.value = Number(m.costoMantenimiento) || 0;
+            c.numFmt = '"Q"#,##0.00';
+          } else {
+            c.value = '—';
+          }
+          c.alignment = { horizontal: 'right' };
+        } else if (col.clave === 'duracion') {
+          const dur = this.duracionMinutos(m);
+          c.value = dur === null ? '—' : dur;
+          c.alignment = { horizontal: 'right' };
+        } else if (col.clave === 'estado') {
+          c.value = textos.estado;
+          c.font = {
+            bold: true,
+            color: {
+              argb: m.estadoEquipoResultante === 'funcionando' ? 'FF1B8A4B' : 'FFC0392B',
+            },
+          };
+        } else {
+          c.value = textos[col.clave];
+          // Los textos largos se ajustan dentro de la celda.
+          if (col.clave === 'descripcion' || col.clave === 'repuestos') {
+            c.alignment = { wrapText: true, vertical: 'top' };
+          }
+        }
+        if (idx % 2 === 1) c.fill = fill('FFF4F7FB');
+      });
     });
 
     if (resultados.length === 0) {
@@ -658,78 +754,80 @@ export class ReportesService {
     }
 
     // Anchos y autofiltro
-    const anchos = [8, 12, 12, 34, 24, 20, 14, 22, 26, 16, 14];
-    anchos.forEach((w, i) => (ws.getColumn(i + 1).width = w));
+    colsExcel.forEach((col, i) => (ws.getColumn(i + 1).width = col.w));
     ws.autoFilter = {
       from: { row: inicioTabla, column: 1 },
-      to: { row: inicioTabla, column: 11 },
+      to: { row: inicioTabla, column: nCols },
     };
     ws.views = [{ state: 'frozen', ySplit: inicioTabla }];
+
+    // Gráficas elegidas en el reporte. Sin ninguna, se omiten las hojas
+    // «Por dia» y «Graficas» (son los datos y las imágenes de esas gráficas).
+    const graficas = resolverGraficas(f.graficas, f.tipoTrabajo);
+    const serieDias: any[] = resumen.seriesDiarias || [];
+    if (graficas.length === 0) return wb;
 
     // -------- Hoja "Por día" (mismos datos que las gráficas de Reportes) --------
     // Permite verificar que las gráficas coinciden con los datos del reporte.
     const wsDia = wb.addWorksheet('Por dia', {
       views: [{ state: 'frozen', ySplit: 2 }],
     });
-    wsDia.mergeCells('A1:D1');
+    const nDia = graficas.length + 1;
+    wsDia.mergeCells(1, 1, 1, Math.max(2, nDia));
     wsDia.getCell('A1').value = 'Detalle diario del periodo (costo y conteos)';
     wsDia.getCell('A1').font = { bold: true, size: 12, color: { argb: A } };
-    const encDia = ['Dia', 'Costo (Q)', 'Llamadas de emergencia', 'Reparaciones'];
     const hDia = wsDia.getRow(2);
-    encDia.forEach((h, i) => {
+    ['Dia', ...graficas.map((g) => GRAFICAS_DEF[g].encabezado)].forEach((h, i) => {
       const c = hDia.getCell(i + 1);
       c.value = h;
-      c.fill = fill(A);
+      // Encabezados con el color de cada gráfica (para identificarlas).
+      c.fill = fill(i === 0 ? A : GRAFICAS_DEF[graficas[i - 1]].argb);
       c.font = { bold: true, color: { argb: 'FFFFFFFF' } };
     });
-    (resumen.seriesDiarias || []).forEach((d, idx) => {
+    serieDias.forEach((d: any, idx: number) => {
       const r = wsDia.getRow(3 + idx);
       r.getCell(1).value = d.fecha;
-      const cCosto = r.getCell(2);
-      cCosto.value = d.costo;
-      cCosto.numFmt = '"Q"#,##0.00';
-      cCosto.alignment = { horizontal: 'right' };
-      r.getCell(3).value = d.emergencias;
-      r.getCell(4).value = d.reparaciones;
-      if (idx % 2 === 1) for (let i = 1; i <= 4; i++) r.getCell(i).fill = fill('FFF4F7FB');
+      graficas.forEach((g, i) => {
+        const c = r.getCell(i + 2);
+        c.value = d[g];
+        if (GRAFICAS_DEF[g].moneda) {
+          c.numFmt = '"Q"#,##0.00';
+          c.alignment = { horizontal: 'right' };
+        }
+      });
+      if (idx % 2 === 1) for (let i = 1; i <= nDia; i++) r.getCell(i).fill = fill('FFF4F7FB');
     });
-    if (!resumen.seriesDiarias || resumen.seriesDiarias.length === 0) {
+    if (serieDias.length === 0) {
       wsDia.getCell('A3').value = 'Sin datos en el periodo seleccionado.';
     }
-    [14, 16, 26, 16].forEach((w, i) => (wsDia.getColumn(i + 1).width = w));
+    wsDia.getColumn(1).width = 14;
+    graficas.forEach((g, i) => {
+      wsDia.getColumn(i + 2).width = g === 'emergencias' ? 26 : 16;
+    });
 
     // Barras de datos (gráficas nativas de Excel dentro de la celda): cada
     // columna numérica se convierte en un mini-gráfico de barras por día, con el
     // mismo color que las gráficas de la aplicación.
-    const nDias = (resumen.seriesDiarias || []).length;
-    if (nDias > 0) {
-      const ultima = 2 + nDias; // datos: filas 3..(2+nDias)
-      const barra = (col: string, argb: string) =>
+    if (serieDias.length > 0) {
+      const ultima = 2 + serieDias.length; // datos: filas 3..(2+nDias)
+      graficas.forEach((g, i) => {
+        const col = wsDia.getColumn(i + 2).letter;
         wsDia.addConditionalFormatting({
           ref: `${col}3:${col}${ultima}`,
           rules: [
             {
               type: 'dataBar',
               gradient: false,
-              cfvo: [
-                { type: 'num', value: 0 },
-                { type: 'max' },
-              ],
-              color: { argb },
+              cfvo: [{ type: 'num', value: 0 }, { type: 'max' }],
+              color: { argb: GRAFICAS_DEF[g].argb },
             } as any,
           ],
         });
-      barra('B', 'FF1B4B8A'); // costo
-      barra('C', 'FFC0392B'); // llamadas de emergencia
-      barra('D', 'FFB7791F'); // reparaciones
-      // Encabezados con el color de cada gráfica (para identificarlas).
-      hDia.getCell(2).fill = fill('FF1B4B8A');
-      hDia.getCell(3).fill = fill('FFC0392B');
-      hDia.getCell(4).fill = fill('FFB7791F');
+      });
     }
 
     // -------- Hoja "Graficas": imágenes idénticas a las del PDF y la app --------
-    const imgs = generarImagenesGraficas((resumen.seriesDiarias || []) as any);
+    const imgs = generarImagenesGraficas(serieDias as any);
     if (imgs) {
       const wsG = wb.addWorksheet('Graficas');
       wsG.getColumn(1).width = 2;
@@ -737,8 +835,8 @@ export class ReportesService {
       wsG.getCell('B1').font = { bold: true, size: 12, color: { argb: A } };
       const anchoPx = 620;
       const altoPx = Math.round((anchoPx * 300) / 820); // conserva el aspecto 820×300
-      [imgs.costo, imgs.emergencias, imgs.reparaciones].forEach((buf, i) => {
-        const id = wb.addImage({ buffer: buf as any, extension: 'png' });
+      graficas.forEach((g, i) => {
+        const id = wb.addImage({ buffer: imgs[g] as any, extension: 'png' });
         wsG.addImage(id, {
           tl: { col: 1, row: 2 + i * 12 },
           ext: { width: anchoPx, height: altoPx },
@@ -753,8 +851,21 @@ export class ReportesService {
   async generarPdf(f: FiltrosReporte): Promise<Buffer> {
     const { resultados, resumen } = await this.preview(f);
 
+    // Columnas y gráficas elegidas. Si las columnas no caben en una hoja
+    // vertical (ancho útil ≈ 515 pt), el documento se genera en horizontal.
+    const columnas = resolverColumnas(f.columnas);
+    const graficas = resolverGraficas(f.graficas, f.tipoTrabajo);
+    const recuadros = resolverResumen(f.resumen, f.tipoTrabajo);
+    const anchoBase = columnas.reduce((a, c) => a + c.ancho, 0);
+    const horizontal = anchoBase > 535;
+
     return new Promise((resolve) => {
-      const doc = new PDFDocument({ margin: 40, size: 'A4', bufferPages: true });
+      const doc = new PDFDocument({
+        margin: 40,
+        size: 'A4',
+        layout: horizontal ? 'landscape' : 'portrait',
+        bufferPages: true,
+      });
       const chunks: Buffer[] = [];
       doc.on('data', (c) => chunks.push(c));
       doc.on('end', () => resolve(Buffer.concat(chunks)));
@@ -795,20 +906,28 @@ export class ReportesService {
       doc.moveDown(0.8);
 
       // ---------- Tarjetas de resumen ----------
-      const tarjetas = [
-        { label: 'Mantenimientos', val: String(resumen.total) },
-        { label: 'Equipos atendidos', val: String(resumen.equiposAtendidos) },
-        { label: 'Fuera de servicio', val: String(resumen.fueraDeServicio) },
-        { label: 'MTTR (min)', val: String(resumen.mttrMinutos) },
-        { label: 'Prev. (min)', val: String(resumen.preventivoMinutos ?? 0) },
-        { label: 'Costo total', val: this.quetzales(resumen.costoTotal ?? 0) },
-      ];
+      // Solo los recuadros elegidos (o los pertinentes al tipo filtrado).
+      const TARJETAS: Record<string, { label: string; val: string }> = {
+        total: { label: 'Mantenimientos', val: String(resumen.total) },
+        equipos: { label: 'Equipos atendidos', val: String(resumen.equiposAtendidos) },
+        fuera: { label: 'Fuera de servicio', val: String(resumen.fueraDeServicio) },
+        mttr: { label: 'MTTR (min)', val: String(resumen.mttrMinutos) },
+        preventivo: { label: 'Prev. (min)', val: String(resumen.preventivoMinutos ?? 0) },
+        costo: { label: 'Costo total', val: this.quetzales(resumen.costoTotal ?? 0) },
+      };
+      const tarjetas = recuadros.map((r) => TARJETAS[r]);
       const gap = 10;
       const cardH = 50;
-      const cardW = (contentW - gap * (tarjetas.length - 1)) / tarjetas.length;
+      // Con pocos recuadros no se estiran a todo el ancho: se limitan y centran.
+      const cardW = Math.min(
+        150,
+        (contentW - gap * (tarjetas.length - 1)) / Math.max(1, tarjetas.length),
+      );
+      const anchoTarjetas = tarjetas.length * cardW + gap * (tarjetas.length - 1);
+      const xTarjetas = left + (contentW - anchoTarjetas) / 2;
       const cardY = doc.y;
       tarjetas.forEach((t, i) => {
-        const x = left + i * (cardW + gap);
+        const x = xTarjetas + i * (cardW + gap);
         doc.roundedRect(x, cardY, cardW, cardH, 6).fillAndStroke(GRIS_SUAVE, GRIS_BORDE);
         // Fuente del valor adaptativa: los importes largos (p. ej. Q88,800.00)
         // se reducen para no invadir la etiqueta ni desbordar la tarjeta.
@@ -818,9 +937,11 @@ export class ReportesService {
         doc.fillColor('#555').font('Helvetica').fontSize(8)
           .text(t.label, x + 3, cardY + 34, { width: cardW - 6, align: 'center' });
       });
-      doc.y = cardY + cardH + 14;
+      if (tarjetas.length) doc.y = cardY + cardH + 14;
 
       // ---------- Distribucion por tipo ----------
+      // Se omite cuando el reporte ya está filtrado a un solo tipo de trabajo.
+      if (!f.tipoTrabajo) {
       doc.fillColor(AZUL_OSCURO).font('Helvetica-Bold').fontSize(11)
         .text('Distribución por tipo de mantenimiento', left, doc.y);
       doc.moveDown(0.3);
@@ -835,16 +956,21 @@ export class ReportesService {
         chipX += w + 8;
       });
       doc.y += 26;
+      }
 
       // ---------- Gráficas diarias del período ----------
       // Costo, llamadas de emergencia y reparaciones por día. Se incrustan como
       // IMÁGENES (idénticas a las del Excel y a la app). Si no se pueden generar
       // las imágenes, se dibuja un respaldo vectorial equivalente.
       const serie = resumen.seriesDiarias || [];
-      if (serie.length) {
+      if (serie.length && graficas.length) {
         const imgs = generarImagenesGraficas(serie as any);
+        // En horizontal la imagen no ocupa todo el ancho: se limita y se centra
+        // para no gastar una página entera por gráfica.
+        const anchoImg = Math.min(contentW, 515);
+        const xImg = left + (contentW - anchoImg) / 2;
         // Salto de página si no cabe el encabezado + al menos una gráfica.
-        const altoImg = (contentW * 300) / 820; // aspecto 820×300
+        const altoImg = (anchoImg * 300) / 820; // aspecto 820×300
         const primerBloque = imgs ? altoImg + 10 : 93;
         if (doc.y + 20 + primerBloque > bottomLimit) {
           doc.addPage();
@@ -855,31 +981,27 @@ export class ReportesService {
         doc.moveDown(0.3);
 
         if (imgs) {
-          [imgs.costo, imgs.emergencias, imgs.reparaciones].forEach((buf) => {
+          graficas.forEach((g) => {
             if (doc.y + altoImg + 8 > bottomLimit) {
               doc.addPage();
               doc.y = doc.page.margins.top;
             }
-            doc.image(buf, left, doc.y, { width: contentW });
+            doc.image(imgs[g], xImg, doc.y, { width: anchoImg });
             doc.y += altoImg + 8;
           });
         } else {
           const chartH = 56;
           const bloque = 15 + chartH + 22;
           let cy = doc.y;
-          const graficas = [
-            { titulo: 'Costo por día', campo: 'costo', color: AZUL, ejeY: 'Costo (Q)', moneda: true },
-            { titulo: 'Llamadas de emergencia por día', campo: 'emergencias', color: ROJO, ejeY: 'N.º de llamadas' },
-            { titulo: 'Reparaciones por día', campo: 'reparaciones', color: AMBAR, ejeY: 'N.º de reparaciones' },
-          ];
-          graficas.forEach((g) => {
+          graficas.forEach((clave) => {
+            const g = GRAFICAS_DEF[clave];
             if (cy + bloque > bottomLimit) {
               doc.addPage();
               cy = doc.page.margins.top;
             }
             cy = this.dibujarGraficaBarras(doc, {
               x: left, y: cy, w: contentW, h: chartH,
-              titulo: g.titulo, datos: serie, campo: g.campo,
+              titulo: g.titulo, datos: serie, campo: clave,
               color: g.color, ejeY: g.ejeY, moneda: g.moneda,
             });
           });
@@ -888,28 +1010,44 @@ export class ReportesService {
       }
 
       // ---------- Tabla de detalle ----------
-      const cols = [
-        { key: 'fecha', label: 'Fecha', w: 48, align: 'left' as const },
-        { key: 'equipo', label: 'Equipo', w: 100, align: 'left' as const },
-        { key: 'ubicacion', label: 'Ubicación', w: 70, align: 'left' as const },
-        { key: 'tipo', label: 'Tipo', w: 60, align: 'left' as const },
-        { key: 'tecnico', label: 'Técnico', w: 60, align: 'left' as const },
-        { key: 'empresa', label: 'Empresa', w: 60, align: 'left' as const },
-        { key: 'costo', label: 'Costo (Q)', w: 52, align: 'right' as const },
-        { key: 'estado', label: 'Estado final', w: contentW - 48 - 100 - 70 - 60 - 60 - 60 - 52, align: 'left' as const },
-      ];
-      const padX = 5;
+      // Las columnas elegidas se reparten todo el ancho útil, en proporción a
+      // su ancho base. Si hay que comprimirlas mucho, se reduce la letra.
+      // Al comprimir, las columnas de dato corto (fecha, horas, importes)
+      // conservan su ancho y solo ceden espacio las de texto.
+      const rigidas = columnas.filter((c) => c.anchoMin);
+      const anchoRigido = rigidas.reduce((a, c) => a + (c.anchoMin || 0), 0);
+      const anchoFlexible = anchoBase - rigidas.reduce((a, c) => a + c.ancho, 0);
+      const comprimir = anchoBase > contentW && anchoFlexible > 0;
+      const escala = comprimir
+        ? (contentW - anchoRigido) / anchoFlexible
+        : contentW / anchoBase;
+      const cols = columnas.map((c: ColumnaReporte) => ({
+        key: c.clave,
+        label: c.label,
+        w: comprimir && c.anchoMin ? c.anchoMin : c.ancho * escala,
+        align: c.align,
+      }));
+      const fsCelda = escala < 0.7 ? 7 : escala < 0.85 ? 7.5 : 8.5;
+      const fsEnc = escala < 0.7 ? 7.5 : escala < 0.85 ? 8 : 9;
+      const padX = escala < 0.7 ? 3 : escala < 0.85 ? 3.5 : 5;
 
       const drawHeaderRow = () => {
         const y = doc.y;
-        doc.rect(left, y, contentW, 20).fill(AZUL);
+        // Alto según el encabezado más largo (puede ocupar dos líneas).
+        doc.font('Helvetica-Bold').fontSize(fsEnc);
+        let hEnc = 20;
+        cols.forEach((c) => {
+          const h = doc.heightOfString(c.label, { width: c.w - padX * 2 });
+          hEnc = Math.max(hEnc, h + 11);
+        });
+        doc.rect(left, y, contentW, hEnc).fill(AZUL);
         let x = left;
-        doc.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(9);
+        doc.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(fsEnc);
         cols.forEach((c) => {
           doc.text(c.label, x + padX, y + 6, { width: c.w - padX * 2, align: c.align });
           x += c.w;
         });
-        doc.y = y + 20;
+        doc.y = y + hEnc;
       };
 
       // Evita que el título del detalle quede al pie de la página tras las gráficas.
@@ -922,27 +1060,16 @@ export class ReportesService {
       doc.moveDown(0.3);
       drawHeaderRow();
 
-      doc.font('Helvetica').fontSize(8.5);
+      doc.font('Helvetica').fontSize(fsCelda);
       if (resultados.length === 0) {
         doc.fillColor('#777').text('Sin registros en el período seleccionado.', left + padX, doc.y + 6);
         doc.y += 22;
       }
 
       resultados.forEach((m: any, idx: number) => {
-        const cells: Record<string, string> = {
-          fecha: this.fechaCorta(m.fechaMantenimiento),
-          equipo: m.equipo ? `${m.equipo.codigoInventario} — ${m.equipo.nombre}` : '—',
-          ubicacion: m.equipo?.ubicacion || '—',
-          tipo: ETIQUETA_TIPO[m.tipoTrabajo] || m.tipoTrabajo,
-          tecnico: m.tecnico?.nombre || '—',
-          empresa: m.empresa?.nombre || '—',
-          costo: precioAplica(m.tipoTrabajo, m.periodo)
-            ? this.quetzales(Number(m.costoMantenimiento) || 0)
-            : '—',
-          estado: ETIQUETA_ESTADO[m.estadoEquipoResultante] || m.estadoEquipoResultante,
-        };
+        const cells = this.celdasDetalle(m);
         // Altura de fila segun el contenido mas alto
-        doc.font('Helvetica').fontSize(8.5);
+        doc.font('Helvetica').fontSize(fsCelda);
         let rowH = 14;
         cols.forEach((c) => {
           const h = doc.heightOfString(cells[c.key], { width: c.w - padX * 2 });
@@ -953,7 +1080,7 @@ export class ReportesService {
           doc.addPage();
           doc.y = doc.page.margins.top;
           drawHeaderRow();
-          doc.font('Helvetica').fontSize(8.5);
+          doc.font('Helvetica').fontSize(fsCelda);
         }
         const y = doc.y;
         if (idx % 2 === 1) doc.rect(left, y, contentW, rowH).fill(GRIS_SUAVE);
@@ -966,7 +1093,7 @@ export class ReportesService {
           } else {
             doc.fillColor('#222').font('Helvetica');
           }
-          doc.fontSize(8.5).text(cells[c.key], x + padX, y + 4, {
+          doc.fontSize(fsCelda).text(cells[c.key], x + padX, y + 4, {
             width: c.w - padX * 2,
             align: c.align,
           });

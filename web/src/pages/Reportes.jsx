@@ -1,15 +1,39 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { equiposApi, reportesApi, catalogosApi } from '../api/services';
 import { mensajeError } from '../api/client';
 import {
   TIPOS_MANTENIMIENTO, TIPO_MANT_LABEL, hoyISO, ordenarEquipos, etiquetaEquipo, fmtQ, precioAplica,
   ESTADOS_EQUIPO, combinarCategorias, categoriaLabel,
+  COLUMNAS_REPORTE, COLUMNAS_REPORTE_DEFECTO, GRAFICAS_REPORTE, PERIODO_LABEL,
+  RESUMEN_REPORTE, contenidoPertinente,
 } from '../data/constants';
 
 // Filtros de equipo: los mismos del buscador de equipos (Equipos / Registro).
 const FILTROS_EQUIPO_VACIOS = { buscar: '', tipoEquipo: '', subTipo: '', marca: '', ubicacion: '', estado: '', categoria: '' };
 import EstadoBadge from '../components/EstadoBadge';
 import GraficasDiarias from '../components/GraficasDiarias';
+
+// Cómo se pinta cada columna configurable del detalle (clave de COLUMNAS_REPORTE).
+// Los valores coinciden con los que imprimen el PDF y el Excel.
+const TEXTO_LARGO = { fontSize: '12.5px', minWidth: 220, whiteSpace: 'pre-wrap' };
+const CELDAS = {
+  fecha: { estilo: { whiteSpace: 'nowrap' }, td: (m) => m.fechaMantenimiento?.slice(0, 10) },
+  equipo: { estilo: { fontSize: '12.5px' }, td: (m) => (m.equipo ? `${m.equipo.codigoInventario} — ${m.equipo.nombre}` : '—') },
+  serie: { td: (m) => m.equipo?.serie || '—' },
+  marca: { td: (m) => m.equipo?.marca || '—' },
+  ubicacion: { td: (m) => m.equipo?.ubicacion || '—' },
+  tipo: { td: (m) => TIPO_MANT_LABEL[m.tipoTrabajo] || m.tipoTrabajo },
+  periodo: { td: (m) => PERIODO_LABEL[m.periodo] || m.periodo || '—' },
+  tecnico: { td: (m) => m.tecnico?.nombre || '—' },
+  empresa: { td: (m) => m.empresa?.nombre || '—' },
+  horaInicio: { td: (m) => m.horaInicioTexto || '—' },
+  horaFin: { td: (m) => m.horaFinTexto || '—' },
+  duracion: { clase: 'text-end', td: (m) => (m.duracionMinutos ?? '—') },
+  descripcion: { estilo: TEXTO_LARGO, td: (m) => (m.descripcionTrabajo || '').trim() || '—' },
+  repuestos: { estilo: { ...TEXTO_LARGO, minWidth: 160 }, td: (m) => (m.repuestosObservaciones || '').trim() || '—' },
+  costo: { clase: 'text-end', td: (m) => (precioAplica(m.tipoTrabajo, m.periodo) ? fmtQ(m.costoMantenimiento ?? 0) : '—') },
+  estado: { td: (m) => <EstadoBadge estado={m.estadoEquipoResultante} /> },
+};
 
 // Generacion de reportes (RF07): mantenimientos e inventario de equipos en alta.
 export default function Reportes() {
@@ -28,6 +52,18 @@ export default function Reportes() {
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState('');
   const [descargando, setDescargando] = useState('');
+
+  // Contenido del reporte: columnas del detalle y gráficas marcadas. Aplican a
+  // la vista previa al instante y se envían al exportar a PDF / Excel.
+  const [columnas, setColumnas] = useState(COLUMNAS_REPORTE_DEFECTO);
+  const [graficas, setGraficas] = useState(GRAFICAS_REPORTE.map((g) => g.clave));
+  const [resumenSel, setResumenSel] = useState(RESUMEN_REPORTE.map((r) => r.clave));
+  const alternar = (lista, setLista, clave) =>
+    setLista(lista.includes(clave) ? lista.filter((c) => c !== clave) : [...lista, clave]);
+  // En el orden del catálogo, sin importar el orden en que se marcaron.
+  const columnasVisibles = COLUMNAS_REPORTE.filter((c) => columnas.includes(c.clave));
+  const columnasPorDefecto = columnas.length === COLUMNAS_REPORTE_DEFECTO.length
+    && COLUMNAS_REPORTE_DEFECTO.every((c) => columnas.includes(c));
 
   // ---------- Reporte de equipos en alta ----------
   const [inv, setInv] = useState(null); // { equipos, resumen }
@@ -57,10 +93,10 @@ export default function Reportes() {
     .map((s) => s.valor);
 
   // Parámetros de equipo activos: se envían al backend y acotan el desplegable «Equipo».
-  const paramsEquipo = () => {
+  const paramsEquipo = (f = filtros) => {
     const p = {};
-    if (filtros.buscar.trim()) p.buscar = filtros.buscar.trim();
-    ['tipoEquipo', 'subTipo', 'marca', 'ubicacion', 'estado', 'categoria'].forEach((k) => { if (filtros[k]) p[k] = filtros[k]; });
+    if (f.buscar.trim()) p.buscar = f.buscar.trim();
+    ['tipoEquipo', 'subTipo', 'marca', 'ubicacion', 'estado', 'categoria'].forEach((k) => { if (f[k]) p[k] = f[k]; });
     return p;
   };
   const hayFiltrosEquipo = Object.keys(FILTROS_EQUIPO_VACIOS).some((k) => filtros[k]);
@@ -86,26 +122,43 @@ export default function Reportes() {
       .finally(() => setInvCargando(false));
   }, [tab, invFiltros.desde, invFiltros.hasta]);
 
-  const paramsActuales = () => {
+  const paramsActuales = (f = filtros) => {
     const p = {};
-    if (filtros.desde) p.desde = filtros.desde;
-    if (filtros.hasta) p.hasta = filtros.hasta;
-    if (filtros.equipo === '__ALTA__') p.excluirBaja = 'true';
-    else if (filtros.equipo) p.equipo = filtros.equipo;
-    if (filtros.tipoTrabajo) p.tipoTrabajo = filtros.tipoTrabajo;
-    return { ...p, ...paramsEquipo() };
+    if (f.desde) p.desde = f.desde;
+    if (f.hasta) p.hasta = f.hasta;
+    if (f.equipo === '__ALTA__') p.excluirBaja = 'true';
+    else if (f.equipo) p.equipo = f.equipo;
+    if (f.tipoTrabajo) p.tipoTrabajo = f.tipoTrabajo;
+    return { ...p, ...paramsEquipo(f) };
   };
 
-  const generar = async () => {
+  // `f` permite generar con filtros recién cambiados (aún no aplicados al
+  // estado). Si se lanzan varias consultas seguidas, solo cuenta la última.
+  const consulta = useRef(0);
+  const generar = async (f = filtros) => {
+    const n = ++consulta.current;
     setCargando(true); setError('');
-    try { setData(await reportesApi.preview(paramsActuales())); }
-    catch (e) { setError(mensajeError(e, 'No se pudo generar el reporte.')); }
-    finally { setCargando(false); }
+    try {
+      const r = await reportesApi.preview(paramsActuales(f));
+      if (n === consulta.current) setData(r);
+    } catch (e) {
+      if (n === consulta.current) setError(mensajeError(e, 'No se pudo generar el reporte.'));
+    } finally {
+      if (n === consulta.current) setCargando(false);
+    }
   };
 
   const exportar = async (formato) => {
     setDescargando(formato); setError('');
-    try { await reportesApi.descargar(formato, paramsActuales()); }
+    try {
+      await reportesApi.descargar(formato, {
+        ...paramsActuales(),
+        columnas: columnasVisibles.map((c) => c.clave).join(','),
+        // «ninguna» = el usuario desmarcó todas las gráficas.
+        graficas: graficas.join(',') || 'ninguna',
+        resumen: RESUMEN_REPORTE.filter((r) => resumenSel.includes(r.clave)).map((r) => r.clave).join(',') || 'ninguna',
+      });
+    }
     catch (e) { setError(mensajeError(e, 'No se pudo exportar el reporte.')); }
     finally { setDescargando(''); }
   };
@@ -118,6 +171,40 @@ export default function Reportes() {
   };
 
   const set = (k, v) => { setFiltros({ ...filtros, [k]: v }); setData(null); };
+
+  // Al cambiar el tipo de trabajo, las casillas pasan a lo pertinente para ese
+  // tipo (p. ej. llamadas de emergencia: sin costo ni reparaciones). Es solo el
+  // punto de partida: después se pueden marcar o desmarcar a gusto.
+  const aplicarPertinente = (tipo) => {
+    const p = contenidoPertinente(tipo);
+    setGraficas(p.graficas);
+    setResumenSel(p.resumen);
+    setColumnas((cols) => {
+      const sinCosto = cols.filter((c) => c !== 'costo');
+      if (p.costo) return [...sinCosto, 'costo'];
+      return sinCosto.length ? sinCosto : cols; // nunca dejar el detalle sin columnas
+    });
+  };
+  // El reporte abierto NO se cierra al cambiar el tipo: se vuelve a consultar
+  // con el nuevo filtro y se actualiza en el mismo lugar, como con las casillas.
+  const cambiarTipoTrabajo = (tipo) => {
+    const nuevos = { ...filtros, tipoTrabajo: tipo };
+    setFiltros(nuevos);
+    aplicarPertinente(tipo);
+    if (data) generar(nuevos);
+  };
+  const contenidoAjustado = !!filtros.tipoTrabajo;
+  // ¿Las casillas están tal como las dejó el filtro de tipo (lo sugerido)?
+  const sugerido = contenidoPertinente(filtros.tipoTrabajo);
+  const mismas = (a, b) => a.length === b.length && a.every((x) => b.includes(x));
+  const enSugerido = mismas(graficas, sugerido.graficas) && mismas(resumenSel, sugerido.resumen)
+    && columnas.includes('costo') === sugerido.costo;
+  // Deshace el ajuste del filtro: vuelve a marcar todo el resumen, las gráficas y el costo.
+  const marcarTodoContenido = () => {
+    setGraficas(GRAFICAS_REPORTE.map((g) => g.clave));
+    setResumenSel(RESUMEN_REPORTE.map((r) => r.clave));
+    setColumnas((cols) => (cols.includes('costo') ? cols : [...cols, 'costo']));
+  };
   const limpiarFiltrosEquipo = () => { setFiltros({ ...filtros, ...FILTROS_EQUIPO_VACIOS }); setData(null); };
   const equipoFiltro = equipos.find((e) => e._id === filtros.equipo);
 
@@ -156,8 +243,8 @@ export default function Reportes() {
                   </select>
                 </div>
                 <div className="col-12 col-md-3">
-                  <label className="form-label">Tipo de mantenimiento</label>
-                  <select className="form-select" value={filtros.tipoTrabajo} onChange={(e) => set('tipoTrabajo', e.target.value)}>
+                  <label className="form-label">Tipo de trabajo</label>
+                  <select className="form-select" value={filtros.tipoTrabajo} onChange={(e) => cambiarTipoTrabajo(e.target.value)}>
                     <option value="">Todos</option>
                     {TIPOS_MANTENIMIENTO.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
                   </select>
@@ -225,8 +312,79 @@ export default function Reportes() {
                   )}
                 </div>
               </div>
+
+              {/* Contenido del reporte: columnas del detalle y gráficas. */}
+              <div className="border-top mt-3 pt-3">
+                <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-1">
+                  <div className="texto-auxiliar fw-semibold">Columnas del detalle</div>
+                  <div className="d-flex gap-2">
+                    <button type="button" className="btn btn-sm btn-link p-0"
+                      disabled={columnas.length === COLUMNAS_REPORTE.length}
+                      onClick={() => setColumnas(COLUMNAS_REPORTE.map((c) => c.clave))}>Marcar todas</button>
+                    <span className="texto-auxiliar">·</span>
+                    <button type="button" className="btn btn-sm btn-link p-0"
+                      disabled={columnasPorDefecto}
+                      onClick={() => setColumnas(COLUMNAS_REPORTE_DEFECTO)}>Restablecer</button>
+                  </div>
+                </div>
+                <div className="d-flex flex-wrap column-gap-3 row-gap-1">
+                  {COLUMNAS_REPORTE.map((c) => {
+                    const marcada = columnas.includes(c.clave);
+                    return (
+                      <div className="form-check" key={c.clave}>
+                        <input className="form-check-input" type="checkbox" id={`col-${c.clave}`}
+                          checked={marcada}
+                          // El detalle necesita al menos una columna.
+                          disabled={marcada && columnas.length === 1}
+                          onChange={() => alternar(columnas, setColumnas, c.clave)} />
+                        <label className="form-check-label" htmlFor={`col-${c.clave}`}>{c.label}</label>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="texto-auxiliar fw-semibold mt-3 mb-1">Resumen del período</div>
+                <div className="d-flex flex-wrap column-gap-3 row-gap-1">
+                  {RESUMEN_REPORTE.map((r) => (
+                    <div className="form-check" key={r.clave}>
+                      <input className="form-check-input" type="checkbox" id={`res-${r.clave}`}
+                        checked={resumenSel.includes(r.clave)}
+                        onChange={() => alternar(resumenSel, setResumenSel, r.clave)} />
+                      <label className="form-check-label" htmlFor={`res-${r.clave}`}>{r.label}</label>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="texto-auxiliar fw-semibold mt-3 mb-1">Gráficas</div>
+                <div className="d-flex flex-wrap column-gap-3 row-gap-1">
+                  {GRAFICAS_REPORTE.map((g) => (
+                    <div className="form-check" key={g.clave}>
+                      <input className="form-check-input" type="checkbox" id={`graf-${g.clave}`}
+                        checked={graficas.includes(g.clave)}
+                        onChange={() => alternar(graficas, setGraficas, g.clave)} />
+                      <label className="form-check-label" htmlFor={`graf-${g.clave}`}>{g.label}</label>
+                    </div>
+                  ))}
+                </div>
+                <div className="form-text">
+                  Lo marcado aquí es lo que aparece en la vista previa, en el PDF y en el Excel.
+                  {contenidoAjustado && (
+                    <> Al filtrar por «{TIPO_MANT_LABEL[filtros.tipoTrabajo]}» se desmarcó lo que no aplica a ese tipo; puede volver a marcarlo.{' '}
+                      {enSugerido ? (
+                        <button type="button" className="btn btn-sm btn-link p-0 align-baseline"
+                          onClick={marcarTodoContenido}>Marcar todo de nuevo</button>
+                      ) : (
+                        <button type="button" className="btn btn-sm btn-link p-0 align-baseline"
+                          onClick={() => aplicarPertinente(filtros.tipoTrabajo)}>Volver a lo sugerido</button>
+                      )}.
+                    </>
+                  )}
+                  {columnasVisibles.length > 8 && ' Con muchas columnas, el PDF se genera en hoja horizontal.'}
+                </div>
+              </div>
+
               <div className="d-flex gap-2 mt-3 flex-wrap">
-                <button className="btn btn-primary" onClick={generar} disabled={cargando}>
+                <button className="btn btn-primary" onClick={() => generar()} disabled={cargando}>
                   {cargando ? <><span className="spinner-border spinner-border-sm me-1" />Generando…</> : <><i className="bi bi-search me-1" />Generar reporte</>}
                 </button>
                 <button className="btn btn-outline-danger" disabled={!data || descargando} onClick={() => exportar('pdf')}>
@@ -274,35 +432,47 @@ export default function Reportes() {
                 {filtros.estado && <> · Estado del equipo: {ESTADOS_EQUIPO.find((s) => s.value === filtros.estado)?.label}</>}
                 {filtros.categoria && <> · Periodicidad: {categoriaLabel(filtros.categoria)}</>}
               </div>
-              <div className="mb-2"><strong style={{ fontSize: '14px' }}>Resumen del período</strong></div>
-              <div className="row row-cols-2 row-cols-md-3 row-cols-lg-5 g-2 mb-3">
-                <div className="col"><div className="border rounded p-2 text-center h-100"><div className="fw-bold fs-5">{data.resumen.total}</div><div className="texto-auxiliar">Mantenimientos</div></div></div>
-                <div className="col"><div className="border rounded p-2 text-center h-100"><div className="fw-bold fs-5">{data.resumen.equiposAtendidos}</div><div className="texto-auxiliar">Equipos atendidos</div></div></div>
-                <div className="col"><div className="border rounded p-2 text-center h-100"><div className="fw-bold fs-5">{data.resumen.mttrMinutos ?? 0} min</div><div className="texto-auxiliar">MTTR</div></div></div>
-                <div className="col"><div className="border rounded p-2 text-center h-100"><div className="fw-bold fs-5">{data.resumen.preventivoMinutos ?? 0} min</div><div className="texto-auxiliar">Tiempo prev.</div></div></div>
-                <div className="col"><div className="border rounded p-2 text-center h-100"><div className="fw-bold fs-5">{fmtQ(data.resumen.costoTotal ?? 0)}</div><div className="texto-auxiliar">Costo total</div></div></div>
-              </div>
+              {/* Recuadros del resumen (solo los marcados). */}
+              {resumenSel.length > 0 && (
+                <>
+                  <div className="mb-2"><strong style={{ fontSize: '14px' }}>Resumen del período</strong></div>
+                  <div className="d-flex flex-wrap gap-2 mb-3">
+                    {[
+                      { clave: 'total', valor: data.resumen.total, label: 'Mantenimientos' },
+                      { clave: 'equipos', valor: data.resumen.equiposAtendidos, label: 'Equipos atendidos' },
+                      { clave: 'fuera', valor: data.resumen.fueraDeServicio ?? 0, label: 'Fuera de servicio' },
+                      { clave: 'mttr', valor: `${data.resumen.mttrMinutos ?? 0} min`, label: 'MTTR' },
+                      { clave: 'preventivo', valor: `${data.resumen.preventivoMinutos ?? 0} min`, label: 'Tiempo prev.' },
+                      { clave: 'costo', valor: fmtQ(data.resumen.costoTotal ?? 0), label: 'Costo total' },
+                    ].filter((t) => resumenSel.includes(t.clave)).map((t) => (
+                      <div key={t.clave} className="border rounded p-2 text-center" style={{ flex: '1 1 130px', maxWidth: 220 }}>
+                        <div className="fw-bold fs-5">{t.valor}</div>
+                        <div className="texto-auxiliar">{t.label}</div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
 
-              {/* Gráficas diarias del período consultado. */}
-              <div className="mb-4">
-                <GraficasDiarias series={data.resumen.seriesDiarias || []} periodoLabel={`${filtros.desde} a ${filtros.hasta}`} />
-              </div>
+              {/* Gráficas diarias del período consultado (solo las marcadas). */}
+              {graficas.length > 0 && (
+                <div className="mb-4">
+                  <GraficasDiarias series={data.resumen.seriesDiarias || []} periodoLabel={`${filtros.desde} a ${filtros.hasta}`} mostrar={graficas} />
+                </div>
+              )}
               <strong style={{ fontSize: '14px' }}>Detalle de mantenimientos</strong>
               <div className="table-responsive mt-1 mb-3">
                 <table className="table table-sm table-bordered">
-                  <thead><tr><th>Fecha</th><th>Equipo</th><th>Ubicación</th><th>Tipo</th><th>Técnico</th><th>Empresa</th><th className="text-end">Costo</th><th>Estado final</th></tr></thead>
+                  <thead>
+                    <tr>{columnasVisibles.map((c) => <th key={c.clave} className={CELDAS[c.clave].clase}>{c.label}</th>)}</tr>
+                  </thead>
                   <tbody>
-                    {data.resultados.length === 0 && <tr><td colSpan={8} className="text-center texto-auxiliar">Sin registros en el período seleccionado.</td></tr>}
+                    {data.resultados.length === 0 && <tr><td colSpan={columnasVisibles.length} className="text-center texto-auxiliar">Sin registros en el período seleccionado.</td></tr>}
                     {data.resultados.map((m) => (
                       <tr key={m._id}>
-                        <td>{m.fechaMantenimiento?.slice(0, 10)}</td>
-                        <td style={{ fontSize: '12.5px' }}>{m.equipo ? `${m.equipo.codigoInventario} — ${m.equipo.nombre}` : '—'}</td>
-                        <td>{m.equipo?.ubicacion || '—'}</td>
-                        <td>{TIPO_MANT_LABEL[m.tipoTrabajo] || m.tipoTrabajo}</td>
-                        <td>{m.tecnico?.nombre || '—'}</td>
-                        <td>{m.empresa?.nombre || '—'}</td>
-                        <td className="text-end">{precioAplica(m.tipoTrabajo, m.periodo) ? fmtQ(m.costoMantenimiento ?? 0) : '—'}</td>
-                        <td><EstadoBadge estado={m.estadoEquipoResultante} /></td>
+                        {columnasVisibles.map((c) => (
+                          <td key={c.clave} className={CELDAS[c.clave].clase} style={CELDAS[c.clave].estilo}>{CELDAS[c.clave].td(m)}</td>
+                        ))}
                       </tr>
                     ))}
                   </tbody>
